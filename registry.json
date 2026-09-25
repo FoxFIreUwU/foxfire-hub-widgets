@@ -4,7 +4,6 @@
     "name": "Таймер стрима",
     "author": { "name": "FoxFire Hub Team", "url": "https://github.com/FoxFireUwU" },
     "rating": 80,
-    "previewUrl": "https://raw.githubusercontent.com/FoxFireUwU/foxfire-hub-widgets/main/widgets/stream-timer/screenshots/01.png",
     "tags": ["OBS", "Windows", "Mac", "Linux"],
     "shortDescription": "Счётчик времени с начала стрима — просто добавь как источник \"Браузер\" в OBS.",
     "fullDescription": "Пробный виджет для проверки каталога FoxFire Hub. Показывает время, прошедшее с момента открытия страницы, крупными цифрами по центру. Цвет текста и размер шрифта настраиваются, формат времени можно переключить между \"чч:мм:сс\" и \"мм:сс\". Работает полностью локально, без интернета. Известное ограничение: при перезагрузке страницы источника в OBS таймер сбрасывается на ноль.",
