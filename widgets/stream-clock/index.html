@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<title>Часы для стрима — FoxFire Hub</title>
+<style>
+  /* Префикс "streamclock-" у всех классов — по тому же правилу изоляции стилей,
+     что и у stream-timer (SYSTEM_WIDGET_STYLE.md, раздел 6). */
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .streamclock-value {
+    font-family: "Segoe UI", "JetBrains Mono", monospace;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-shadow: 0 0 12px rgba(0, 0, 0, 0.6);
+    color: #f4f0ea;
+    font-size: 48px;
+  }
+</style>
+</head>
+<body>
+  <div class="streamclock-value" id="streamclock-value">00:00</div>
+
+  <script>
+    // Настройки через параметры адресной строки, как и у stream-timer.
+    // Пример: index.html?textColor=%23ffffff&fontSize=60&use24h=false
+    const params = new URLSearchParams(window.location.search);
+
+    const textColor = params.get("textColor") || "#f4f0ea";
+    const fontSize = Number.parseInt(params.get("fontSize") || "48", 10);
+    const use24h = params.get("use24h") !== "false"; // по умолчанию true
+
+    const valueEl = document.getElementById("streamclock-value");
+    valueEl.style.color = textColor;
+    valueEl.style.fontSize = fontSize + "px";
+
+    function pad(n) {
+      return String(n).padStart(2, "0");
+    }
+
+    function tick() {
+      const now = new Date();
+      let hours = now.getHours();
+      const minutes = now.getMinutes();
+      const seconds = now.getSeconds();
+      let suffix = "";
+
+      if (!use24h) {
+        suffix = hours >= 12 ? " PM" : " AM";
+        hours = hours % 12;
+        if (hours === 0) hours = 12;
+      }
+
+      valueEl.textContent = `${pad(hours)}:${pad(minutes)}:${pad(seconds)}${suffix}`;
+    }
+
+    tick();
+    setInterval(tick, 1000);
+  </script>
+</body>
+</html>

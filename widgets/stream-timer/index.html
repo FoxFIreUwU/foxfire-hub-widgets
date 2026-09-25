@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<title>Таймер стрима — FoxFire Hub</title>
+<style>
+  /* Все классы этого виджета начинаются с "streamtimer-", чтобы не конфликтовать
+     со стилями FoxFire Hub или других виджетов (правило из SYSTEM_WIDGET_STYLE.md,
+     раздел 6 "Обязательная изоляция стилей"). */
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: transparent; /* прозрачный фон — источник "Браузер" в OBS покажет только текст */
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .streamtimer-value {
+    font-family: "Segoe UI", "JetBrains Mono", monospace;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-shadow: 0 0 12px rgba(0, 0, 0, 0.6);
+    /* Цвет и размер шрифта подставляются скриптом ниже из настроек виджета */
+    color: #e2820a;
+    font-size: 64px;
+  }
+</style>
+</head>
+<body>
+  <div class="streamtimer-value" id="streamtimer-value">00:00:00</div>
+
+  <script>
+    // Настройки виджета передаются через параметры адресной строки —
+    // так проще всего протестировать configSchema без реальной интеграции
+    // с FoxFire Hub. Пример ссылки с настройками:
+    // index.html?textColor=%23ff0055&fontSize=96&longFormat=true
+    const params = new URLSearchParams(window.location.search);
+
+    const textColor = params.get("textColor") || "#e2820a";
+    const fontSize = Number.parseInt(params.get("fontSize") || "64", 10);
+    const longFormat = params.get("longFormat") !== "false"; // по умолчанию true
+
+    const valueEl = document.getElementById("streamtimer-value");
+    valueEl.style.color = textColor;
+    valueEl.style.fontSize = fontSize + "px";
+
+    function pad(n) {
+      return String(n).padStart(2, "0");
+    }
+
+    const startedAt = Date.now();
+
+    function tick() {
+      const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
+      const hours = Math.floor(elapsedSeconds / 3600);
+      const minutes = Math.floor((elapsedSeconds % 3600) / 60);
+      const seconds = elapsedSeconds % 60;
+
+      valueEl.textContent = longFormat
+        ? `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
+        : `${pad(minutes)}:${pad(seconds)}`;
+    }
+
+    tick();
+    setInterval(tick, 1000);
+  </script>
+</body>
+</html>
