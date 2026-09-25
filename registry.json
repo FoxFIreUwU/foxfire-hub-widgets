@@ -28,6 +28,7 @@
     "name": "Часы для стрима",
     "author": { "name": "FoxFire Hub Team", "url": "https://github.com/YOUR_USER" },
     "rating": 78,
+   "previewUrl": "https://raw.githubusercontent.com/foxfire-hub-widgets/widgets/stream-clock/screenshots/01.png"
     "tags": ["OBS", "Windows", "Mac", "Linux"],
     "shortDescription": "Простые цифровые часы поверх стрима — местное время зрителя выставлять не нужно.",
     "fullDescription": "Второй пробный виджет для проверки каталога FoxFire Hub. Показывает текущее время компьютера, на котором открыт браузерный источник в OBS, в 24-часовом или 12-часовом формате. Цвет текста и размер шрифта настраиваются. Работает полностью локально, время берётся из системных часов компьютера.",
