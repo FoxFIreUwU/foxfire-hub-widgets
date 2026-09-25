@@ -19,7 +19,7 @@
         "releaseDate": "2026-09-25",
         "downloadUrl": "https://github.com/FoxFireUwU/foxfire-hub-widgets/releases/download/stream-timer-v1.0.0/stream-timer.zip",
         "status": "stable",
-        "statusMessage": ""
+        "statusMessage": "unavailable"
       }
     ]
   },
@@ -44,7 +44,7 @@
         "releaseDate": "2026-09-25",
         "downloadUrl": "https://github.com/FoxFireUwU/foxfire-hub-widgets/releases/download/stream-clock-v1.0.0/stream-clock.zip",
         "status": "stable",
-        "statusMessage": ""
+        "statusMessage": "unavailable"
       }
     ]
   }
