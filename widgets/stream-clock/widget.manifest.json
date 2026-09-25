@@ -3,7 +3,7 @@
   "name": "Часы для стрима",
   "author": {
     "name": "FoxFire Hub Team",
-    "url": "https://github.com/YOUR_USER"
+    "url": "https://github.com/FoxFIreUwU"
   },
   "rating": 78,
   "tags": ["OBS", "Windows", "Mac", "Linux"],
@@ -19,7 +19,7 @@
     {
       "version": "1.0.0",
       "releaseDate": "2026-09-25",
-      "downloadUrl": "https://github.com/YOUR_USER/YOUR_REGISTRY_REPO/releases/download/stream-clock-v1.0.0/stream-clock.zip",
+      "downloadUrl": "https://github.com/FoxFIreUwU/foxfire-hub-widgets/releases/download/stream-clock-v1.0.0/stream-clock.zip",
       "status": "stable",
       "statusMessage": ""
     }
