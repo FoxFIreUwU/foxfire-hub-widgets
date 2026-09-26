@@ -1,0 +1,92 @@
+{
+  "id": "unified-chat",
+  "name": "Общий чат (Twitch + YouTube)",
+  "author": {
+    "name": "FoxFire Hub Team",
+    "url": "https://github.com/FoxFireUwU"
+  },
+  "rating": 0,
+  "tags": [
+    "OBS",
+    "Chat",
+    "Twitch",
+    "YouTube",
+    "Windows",
+    "Mac",
+    "Linux"
+  ],
+  "shortDescription": "Склеивает чаты Twitch и YouTube в одну ленту — для стримера и для зрителей на оверлее.",
+  "fullDescription": "Когда стрим идёт одновременно на Twitch и YouTube, сообщения из обоих чатов показываются одной общей лентой, отсортированной по времени — не нужно бегать глазами между двумя окнами. Виджет можно использовать и как личный второй монитор стримера (окно самого FoxFire Hub), и как оверлей поверх стрима для зрителей (источник \"Браузер\" в OBS) — тогда зрители на любой площадке видят сообщения из обеих одновременно.\n\nTwitch подключается анонимно (без токена и без входа в аккаунт) — просто впиши логин канала. YouTube официального анонимного способа читать чат не имеет, поэтому нужен собственный бесплатный API-ключ Google (YouTube Data API v3) и Video ID текущей трансляции — как их получить, подробно расписано в README виджета. Работать может и с одной площадкой — оставь поле второй пустым.\n\nПоддерживается: цвет ника и эмодзи Twitch, бейджи (стример/модератор/VIP/подписчик — упрощённо, значком, без загрузки настоящих картинок бейджей), суперчаты YouTube подсвечиваются отдельно, направление ленты (новые сверху/снизу), лимит числа сообщений, таймстемпы, прозрачность фона карточки.\n\nИзвестные ограничения: у YouTube Data API дневная квота — при очень частом чате виджет сам подстраивает частоту опроса под лимит, который возвращает сама YouTube API, лишний раз не долбит сервер; Video ID трансляции нужно обновлять вручную на каждый новый эфир (сам виджет не ищет по имени канала, чтобы не тратить квоту на дорогой поиск).",
+  "previewUrl": "https://raw.githubusercontent.com/FoxFireUwU/foxfire-hub-widgets/main/widgets/unified-chat/screenshots/01.png",
+  "configSchema": {
+    "twitchChannel": {
+      "type": "text",
+      "label": "Логин канала Twitch",
+      "default": ""
+    },
+    "youtubeVideoId": {
+      "type": "text",
+      "label": "Video ID трансляции YouTube",
+      "default": ""
+    },
+    "youtubeApiKey": {
+      "type": "text",
+      "label": "API-ключ YouTube (свой)",
+      "default": ""
+    },
+    "direction": {
+      "type": "select",
+      "label": "Направление ленты",
+      "default": "Новые снизу",
+      "options": [
+        "Новые снизу",
+        "Новые сверху"
+      ]
+    },
+    "fontSize": {
+      "type": "number",
+      "label": "Размер шрифта (px)",
+      "default": 18
+    },
+    "maxMessages": {
+      "type": "number",
+      "label": "Сколько сообщений держать на экране",
+      "default": 40
+    },
+    "bgOpacity": {
+      "type": "number",
+      "label": "Непрозрачность фона карточки (%)",
+      "default": 55
+    },
+    "showPlatformIcons": {
+      "type": "boolean",
+      "label": "Показывать значок площадки",
+      "default": true
+    },
+    "showBadges": {
+      "type": "boolean",
+      "label": "Показывать бейджи (модератор/VIP и т.д.)",
+      "default": true
+    },
+    "showTimestamps": {
+      "type": "boolean",
+      "label": "Показывать время сообщения",
+      "default": false
+    },
+    "textColor": {
+      "type": "color",
+      "label": "Цвет текста сообщений",
+      "default": "#f4f0ea"
+    }
+  },
+  "minAppVersion": "0.1.5",
+  "versions": [
+    {
+      "version": "1.0.0",
+      "releaseDate": "2026-09-26",
+      "downloadUrl": "https://github.com/FoxFIreUwU/foxfire-hub-widgets/releases/download/unified-chat-v1.0.0/unified-chat.zip",
+      "status": "stable",
+      "statusMessage": "ALPHA"
+    }
+  ]
+}

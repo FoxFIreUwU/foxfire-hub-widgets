@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<title>Общий чат (Twitch + YouTube) — FoxFire Hub</title>
+<style>
+  /* Все классы этого виджета начинаются с "unifiedchat-", чтобы не конфликтовать
+     со стилями FoxFire Hub или других виджетов (SYSTEM_WIDGET_STYLE.md, раздел 6). */
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: transparent; /* прозрачный фон снаружи — источник "Браузер" в OBS покажет только карточку чата */
+    font-family: "Segoe UI", "Inter", -apple-system, sans-serif;
+  }
+
+  .unifiedchat-root {
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 10px;
+  }
+
+  .unifiedchat-feed {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow: hidden;
+    padding: 10px;
+    border-radius: 16px;
+    /* тёплый почти чёрный фон карточки FoxFire (#1a1512), прозрачность через bgOpacity */
+    background: rgba(26, 21, 18, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .unifiedchat-feed::-webkit-scrollbar { width: 6px; }
+  .unifiedchat-feed::-webkit-scrollbar-thumb { background: rgba(226, 130, 10, 0.35); border-radius: 3px; }
+
+  .unifiedchat-empty {
+    margin: auto;
+    text-align: center;
+    color: #a89a8c;
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 12px;
+  }
+
+  .unifiedchat-msg {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+    padding: 4px 8px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.02);
+    animation: unifiedchat-in 0.18s ease-out;
+    word-break: break-word;
+  }
+
+  @keyframes unifiedchat-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .unifiedchat-msg--super {
+    border-left: 3px solid #e2820a;
+    background: rgba(226, 130, 10, 0.12);
+    box-shadow: 0 0 14px rgba(226, 130, 10, 0.25);
+  }
+
+  .unifiedchat-platform { font-size: 0.85em; line-height: 1; }
+  .unifiedchat-time { font-size: 0.75em; color: #a89a8c; font-variant-numeric: tabular-nums; }
+  .unifiedchat-badge { font-size: 0.85em; line-height: 1; }
+
+  .unifiedchat-author { font-weight: 700; }
+  .unifiedchat-sep { color: #a89a8c; }
+
+  .unifiedchat-text { color: #f4f0ea; }
+  .unifiedchat-text img.unifiedchat-emote {
+    height: 1.5em;
+    vertical-align: middle;
+    margin: 0 1px;
+  }
+
+  .unifiedchat-super-amount {
+    margin-left: auto;
+    font-weight: 700;
+    color: #e2820a;
+    font-size: 0.85em;
+  }
+</style>
+</head>
+<body>
+  <div class="unifiedchat-root">
+    <div class="unifiedchat-feed" id="unifiedchat-feed"></div>
+  </div>
+
+  <script>
+    // === Настройки виджета (см. SYSTEM_WIDGET_STYLE.md, раздел 8б) ===
+    // Все значения приходят как query-параметры index.html, имя параметра = ключ
+    // из configSchema в widget.manifest.json. У каждого параметра — fallback,
+    // совпадающий со значением default в манифесте.
+    const params = new URLSearchParams(window.location.search);
+
+    const twitchChannel = (params.get("twitchChannel") || "").trim().toLowerCase().replace(/^#/, "");
+    const youtubeVideoId = (params.get("youtubeVideoId") || "").trim();
+    const youtubeApiKey = (params.get("youtubeApiKey") || "").trim();
+    const directionLabel = params.get("direction") || "Новые снизу";
+    const direction = directionLabel === "Новые сверху" ? "top" : "bottom";
+    const fontSize = Number.parseInt(params.get("fontSize") || "18", 10);
+    const maxMessages = Math.max(5, Number.parseInt(params.get("maxMessages") || "40", 10));
+    const bgOpacity = Math.min(100, Math.max(0, Number.parseInt(params.get("bgOpacity") || "55", 10)));
+    const showPlatformIcons = params.get("showPlatformIcons") !== "false";
+    const showBadges = params.get("showBadges") !== "false";
+    const showTimestamps = params.get("showTimestamps") === "true"; // по умолчанию false
+    const textColor = params.get("textColor") || "#f4f0ea";
+
+    const feed = document.getElementById("unifiedchat-feed");
+    feed.style.background = `rgba(26, 21, 18, ${bgOpacity / 100})`;
+    document.body.style.fontSize = fontSize + "px";
+    feed.style.color = textColor;
+
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function pad(n) { return String(n).padStart(2, "0"); }
+
+    // === Отрисовка объединённой ленты ===
+    function addMessage(msg) {
+      const emptyNotice = feed.querySelector(".unifiedchat-empty");
+      if (emptyNotice) emptyNotice.remove();
+
+      const el = document.createElement("div");
+      el.className = "unifiedchat-msg unifiedchat-msg--" + msg.platform + (msg.superchat ? " unifiedchat-msg--super" : "");
+
+      let inner = "";
+      if (showPlatformIcons) {
+        const icon = msg.platform === "twitch" ? "🟣" : "🔴";
+        inner += `<span class="unifiedchat-platform" title="${msg.platform === "twitch" ? "Twitch" : "YouTube"}">${icon}</span>`;
+      }
+      if (showTimestamps) {
+        const d = new Date(msg.ts);
+        inner += `<span class="unifiedchat-time">${pad(d.getHours())}:${pad(d.getMinutes())}</span>`;
+      }
+      if (showBadges && msg.badges && msg.badges.length) {
+        inner += msg.badges.map((b) => `<span class="unifiedchat-badge" title="${escapeHtml(b.label)}">${b.icon}</span>`).join("");
+      }
+      const authorColor = msg.color || (msg.platform === "twitch" ? "#c084fc" : "#ff8080");
+      inner += `<span class="unifiedchat-author" style="color:${authorColor}">${escapeHtml(msg.author)}</span>`;
+      inner += `<span class="unifiedchat-sep">:</span>`;
+      inner += `<span class="unifiedchat-text">${msg.html}</span>`;
+      if (msg.superchat) {
+        inner += `<span class="unifiedchat-super-amount">${escapeHtml(msg.superchat)}</span>`;
+      }
+      el.innerHTML = inner;
+
+      if (direction === "top") {
+        feed.insertBefore(el, feed.firstChild);
+      } else {
+        feed.appendChild(el);
+      }
+
+      while (feed.children.length > maxMessages) {
+        feed.removeChild(direction === "top" ? feed.lastChild : feed.firstChild);
+      }
+
+      if (direction === "bottom") {
+        feed.scrollTop = feed.scrollHeight;
+      }
+    }
+
+    if (!twitchChannel && !(youtubeVideoId && youtubeApiKey)) {
+      feed.innerHTML =
+        '<div class="unifiedchat-empty">Настройте виджет: укажите канал Twitch и/или Video ID + API-ключ YouTube в настройках карточки.</div>';
+    }
+
+    // ================= TWITCH (анонимное подключение к IRC по WebSocket) =================
+    // Публичный чат Twitch можно читать без токена/OAuth — достаточно анонимного
+    // логина вида "justinfanNNNNN" (стандартный приём, которым пользуются все
+    // сторонние Twitch-чат-виджеты). Собственный аккаунт стримера не нужен.
+    const TWITCH_BADGE_ICONS = {
+      broadcaster: { icon: "🟠", label: "Стример" },
+      moderator: { icon: "🛡️", label: "Модератор" },
+      vip: { icon: "💎", label: "VIP" },
+      subscriber: { icon: "⭐", label: "Подписчик" },
+      founder: { icon: "🏆", label: "Фаундер" },
+      partner: { icon: "✅", label: "Партнёр" },
+      staff: { icon: "🔧", label: "Staff" },
+      admin: { icon: "🔧", label: "Admin" },
+    };
+
+    function renderTwitchText(text, emotesRaw) {
+      if (!emotesRaw) return escapeHtml(text);
+      const ranges = [];
+      emotesRaw.split("/").forEach((part) => {
+        const [id, posList] = part.split(":");
+        if (!id || !posList) return;
+        posList.split(",").forEach((pos) => {
+          const [s, e] = pos.split("-").map(Number);
+          if (!Number.isNaN(s) && !Number.isNaN(e)) ranges.push({ id, s, e });
+        });
+      });
+      ranges.sort((a, b) => a.s - b.s);
+
+      // Twitch отдаёт позиции по code unit'ам исходной строки — используем
+      // обычную индексацию JS-строки (UTF-16), это совпадает с форматом Twitch.
+      let result = "";
+      let cursor = 0;
+      ranges.forEach((r) => {
+        if (r.s < cursor || r.s > text.length) return;
+        result += escapeHtml(text.slice(cursor, r.s));
+        result += `<img class="unifiedchat-emote" src="https://static-cdn.jtvnw.net/emoticons/v2/${r.id}/default/dark/2.0" alt="" />`;
+        cursor = r.e + 1;
+      });
+      result += escapeHtml(text.slice(cursor));
+      return result;
+    }
+
+    function parseTwitchTags(raw) {
+      const tags = {};
+      raw.split(";").forEach((kv) => {
+        const idx = kv.indexOf("=");
+        if (idx === -1) return;
+        tags[kv.slice(0, idx)] = kv.slice(idx + 1);
+      });
+      return tags;
+    }
+
+    function handleTwitchLine(line, ws) {
+      if (line.startsWith("PING")) {
+        ws.send("PONG :tmi.twitch.tv");
+        return;
+      }
+      const match = line.match(/^@([^ ]+) :[^!]+![^ ]+ PRIVMSG #[^ ]+ :(.*)$/);
+      if (!match) return;
+      const tags = parseTwitchTags(match[1]);
+      const text = match[2];
+
+      const displayName = (tags["display-name"] || "").replace(/\\s/g, " ") || "twitch";
+      const color = tags["color"] && tags["color"] !== "" ? tags["color"] : null;
+      const badgeNames = (tags["badges"] || "")
+        .split(",")
+        .filter(Boolean)
+        .map((b) => b.split("/")[0]);
+      const badges = badgeNames
+        .map((name) => TWITCH_BADGE_ICONS[name])
+        .filter(Boolean);
+
+      addMessage({
+        platform: "twitch",
+        author: displayName,
+        color,
+        badges,
+        html: renderTwitchText(text, tags["emotes"] || ""),
+        ts: Date.now(),
+      });
+    }
+
+    function connectTwitch(channel) {
+      if (!channel) return;
+      let retryDelay = 2000;
+
+      function connect() {
+        const ws = new WebSocket("wss://irc-ws.chat.twitch.tv:443");
+        ws.onopen = () => {
+          ws.send("CAP REQ :twitch.tv/tags twitch.tv/commands");
+          ws.send("PASS SCHMOOPIIE");
+          ws.send("NICK justinfan" + Math.floor(10000 + Math.random() * 80000));
+          ws.send("JOIN #" + channel);
+          retryDelay = 2000;
+        };
+        ws.onmessage = (event) => {
+          event.data
+            .split("\r\n")
+            .filter(Boolean)
+            .forEach((line) => handleTwitchLine(line, ws));
+        };
+        ws.onclose = () => {
+          setTimeout(connect, retryDelay);
+          retryDelay = Math.min(retryDelay * 1.5, 30000);
+        };
+        ws.onerror = () => {
+          try { ws.close(); } catch (_) { /* игнорируем */ }
+        };
+      }
+
+      connect();
+    }
+
+    // ================= YOUTUBE (YouTube Data API v3, опрос) =================
+    // У YouTube нет публичного анонимного протокола чата уровня Twitch IRC —
+    // единственный официальный способ читать live-чат без бэкенда — это
+    // YouTube Data API v3 с собственным API-ключом стримера (создаётся
+    // бесплатно в Google Cloud Console, см. README этого виджета). Виджет сам
+    // находит activeLiveChatId по указанному Video ID и опрашивает сообщения
+    // с интервалом, который возвращает сама YouTube API (pollingIntervalMillis) —
+    // это нужно, чтобы не упереться в дневную квоту ключа.
+
+    function ytBadges(author) {
+      const list = [];
+      if (author.isChatOwner) list.push({ icon: "🟠", label: "Владелец канала" });
+      if (author.isChatModerator) list.push({ icon: "🛡️", label: "Модератор" });
+      if (author.isChatSponsor) list.push({ icon: "⭐", label: "Спонсор канала" });
+      if (author.isVerified) list.push({ icon: "✅", label: "Подтверждён" });
+      return list;
+    }
+
+    async function fetchLiveChatId(videoId, apiKey) {
+      const url =
+        `https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails` +
+        `&id=${encodeURIComponent(videoId)}&key=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message || "YouTube API error");
+      const item = data.items && data.items[0];
+      return item && item.liveStreamingDetails ? item.liveStreamingDetails.activeLiveChatId : null;
+    }
+
+    async function pollYoutube(liveChatId, apiKey, pageToken) {
+      let nextDelay = 5000;
+      try {
+        let url =
+          `https://www.googleapis.com/youtube/v3/liveChat/messages?liveChatId=${encodeURIComponent(liveChatId)}` +
+          `&part=snippet,authorDetails&key=${encodeURIComponent(apiKey)}`;
+        if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
+
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (data.error) {
+          console.warn("unified-chat: YouTube API вернул ошибку", data.error.message);
+          nextDelay = 30000; // скорее всего квота — не долбим API чаще раза в 30с
+        } else {
+          (data.items || []).forEach((item) => {
+            const snippet = item.snippet || {};
+            const author = item.authorDetails || {};
+            if (!snippet.displayMessage) return;
+            addMessage({
+              platform: "youtube",
+              author: author.displayName || "YouTube",
+              color: null,
+              badges: ytBadges(author),
+              html: escapeHtml(snippet.displayMessage),
+              ts: snippet.publishedAt ? new Date(snippet.publishedAt).getTime() : Date.now(),
+              superchat: snippet.superChatDetails ? snippet.superChatDetails.amountDisplayString : null,
+            });
+          });
+          pageToken = data.nextPageToken || pageToken;
+          nextDelay = Math.max(2000, data.pollingIntervalMillis || 5000);
+        }
+      } catch (err) {
+        console.warn("unified-chat: не удалось опросить YouTube чат", err);
+        nextDelay = 15000;
+      }
+      setTimeout(() => pollYoutube(liveChatId, apiKey, pageToken), nextDelay);
+    }
+
+    async function connectYoutube(videoId, apiKey) {
+      if (!videoId || !apiKey) return;
+      try {
+        const liveChatId = await fetchLiveChatId(videoId, apiKey);
+        if (!liveChatId) {
+          console.warn("unified-chat: у этого видео нет активного live-чата (проверь Video ID)");
+          setTimeout(() => connectYoutube(videoId, apiKey), 20000);
+          return;
+        }
+        pollYoutube(liveChatId, apiKey);
+      } catch (err) {
+        console.warn("unified-chat: ошибка при поиске live-чата YouTube", err);
+        setTimeout(() => connectYoutube(videoId, apiKey), 20000);
+      }
+    }
+
+    // === Запуск ===
+    connectTwitch(twitchChannel);
+    connectYoutube(youtubeVideoId, youtubeApiKey);
+  </script>
+</body>
+</html>
