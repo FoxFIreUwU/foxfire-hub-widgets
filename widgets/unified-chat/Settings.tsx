@@ -1,28 +1,45 @@
 // Settings.tsx — по конвенции из SYSTEM_WIDGET_STYLE.md (раздел 1) это "панель
-// настроек виджета". FoxFire Hub уже умеет сам рисовать панель настроек по полю
-// configSchema из widget.manifest.json (см. WidgetModal.tsx в основном
-// приложении), поэтому для этого виджета отдельный файл не обязателен — все поля
-// (text/number/boolean/select/color) стандартные и покрываются автогенерацией.
+// настроек виджета". FoxFire Hub умеет сам рисовать простую панель настроек по
+// полю configSchema из widget.manifest.json (см. WidgetModal.tsx в основном
+// приложении) — она по-прежнему работает как fallback и покрывает все поля
+// (text/number/boolean/select/color) автогенерацией.
 //
-// Файл оставлен здесь как образец на будущее — например, если понадобится
-// живой предпросмотр чата прямо внутри панели настроек, а не только в отдельном
-// окне запущенного виджета.
+// НО с версии 2.0.0 у этого виджета есть полноценное отдельное окно настроек
+// с живым предпросмотром — settings.html в этой же папке (обычный HTML/JS,
+// без сборки, как и index.html, — так виджет остаётся простым статическим
+// набором файлов без build-шага). Это основной способ настройки, к которому
+// стоит вести пользователя; см. README.md, раздел "Для следующего агента /
+// интеграция с Hub" — там описано, чего не хватает на стороне самого Hub,
+// чтобы открывать settings.html вместо этой автоформы.
+//
+// Файл оставлен здесь как образец компонента для будущей единой менюшки
+// плагинов в Hub (см. задачу пользователя) — когда там появится общий
+// механизм для "богатых" панелей настроек виджетов, эта форма и форма из
+// settings.html — кандидаты на перенос в React-компонент такого вида.
 import { useState } from "react";
 
 interface UnifiedChatConfig {
   twitchChannel: string;
-  youtubeMode: "Вручную (Video ID + ключ)" | "Вход через Google (авто)";
-  youtubeVideoId: string;
+  youtubeChannel: string;
   youtubeApiKey: string;
-  googleClientId: string;
+  youtubeVideoIdOverride: string;
   direction: "Новые снизу" | "Новые сверху";
+  fontFamily: string;
+  fontFamilyCustom: string;
+  animationStyle: string;
+  scale: number;
   fontSize: number;
+  messageSpacing: number;
+  cornerRadius: number;
   maxMessages: number;
   bgOpacity: number;
   showPlatformIcons: boolean;
   showBadges: boolean;
   showTimestamps: boolean;
+  highlightModActions: boolean;
+  enableThirdPartyEmotes: boolean;
   textColor: string;
+  accentColor: string;
 }
 
 interface UnifiedChatSettingsProps {
@@ -52,40 +69,32 @@ export default function UnifiedChatSettings({ value, onChange }: UnifiedChatSett
       </label>
 
       <label>
-        Режим YouTube
-        <select value={config.youtubeMode} onChange={(e) => update("youtubeMode", e.target.value as UnifiedChatConfig["youtubeMode"])}>
-          <option value="Вручную (Video ID + ключ)">Вручную (Video ID + ключ)</option>
-          <option value="Вход через Google (авто)">Вход через Google (авто)</option>
-        </select>
+        Канал YouTube (ссылка, @handle или ID)
+        <input
+          type="text"
+          value={config.youtubeChannel}
+          onChange={(e) => update("youtubeChannel", e.target.value)}
+          placeholder="@my_channel"
+        />
       </label>
 
       <label>
-        Video ID трансляции (для режима "Вручную")
+        Video ID вручную (необязательно, запасной вариант)
         <input
           type="text"
-          value={config.youtubeVideoId}
-          onChange={(e) => update("youtubeVideoId", e.target.value)}
+          value={config.youtubeVideoIdOverride}
+          onChange={(e) => update("youtubeVideoIdOverride", e.target.value)}
           placeholder="dQw4w9WgXcQ"
         />
       </label>
 
       <label>
-        API-ключ YouTube (для режима "Вручную")
+        API-ключ YouTube (свой)
         <input
           type="text"
           value={config.youtubeApiKey}
           onChange={(e) => update("youtubeApiKey", e.target.value)}
           placeholder="AIzaSy..."
-        />
-      </label>
-
-      <label>
-        Google Client ID (для режима "Вход через Google")
-        <input
-          type="text"
-          value={config.googleClientId}
-          onChange={(e) => update("googleClientId", e.target.value)}
-          placeholder="1234567890-abc.apps.googleusercontent.com"
         />
       </label>
 

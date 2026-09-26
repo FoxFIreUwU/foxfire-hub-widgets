@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<title>Настройки — Общий чат (Twitch + YouTube)</title>
+<style>
+  /* Тот же принцип изоляции стилей, что и в index.html — префикс "ucs-"
+     (unified-chat-settings), чтобы не конфликтовать с Hub. Палитра — тёплая
+     тёмная, в стиле FoxFire Hub (#1a1512 фон, #e2820a акцент по умолчанию). */
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #14100d;
+    color: #f4f0ea;
+    font-family: "Segoe UI", "Inter", -apple-system, sans-serif;
+  }
+  .ucs-root { display: flex; height: 100%; }
+  .ucs-form {
+    width: 380px;
+    min-width: 320px;
+    overflow-y: auto;
+    padding: 18px;
+    background: #1a1512;
+    border-right: 1px solid rgba(255,255,255,0.06);
+  }
+  .ucs-preview {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: repeating-conic-gradient(#201a16 0% 25%, #191410 0% 50%) 50% / 24px 24px;
+  }
+  .ucs-preview-bar {
+    padding: 10px 16px;
+    display: flex; align-items: center; gap: 10px;
+    background: #1a1512;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    font-size: 13px;
+    color: #a89a8c;
+  }
+  .ucs-preview-bar strong { color: #f4f0ea; }
+  .ucs-preview iframe { flex: 1; border: none; width: 100%; }
+
+  h1 { font-size: 17px; margin: 0 0 4px; }
+  .ucs-sub { color: #a89a8c; font-size: 12.5px; margin: 0 0 18px; }
+  .ucs-section { margin-bottom: 22px; }
+  .ucs-section h2 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: #e2820a; margin: 0 0 10px; font-weight: 700;
+  }
+  label.ucs-field { display: block; margin-bottom: 12px; font-size: 13px; color: #d8cfc5; }
+  label.ucs-field span.ucs-label { display: block; margin-bottom: 4px; }
+  .ucs-field input[type="text"],
+  .ucs-field input[type="number"],
+  .ucs-field select {
+    width: 100%; padding: 7px 9px; border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.12); background: #0f0c0a; color: #f4f0ea;
+    font-size: 13px;
+  }
+  .ucs-field input[type="color"] { width: 48px; height: 30px; border: none; background: none; padding: 0; }
+  .ucs-checkbox { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 10px; color: #d8cfc5; }
+  .ucs-checkbox input { width: 16px; height: 16px; }
+  .ucs-hint { font-size: 11.5px; color: #7d7267; margin-top: -6px; margin-bottom: 12px; line-height: 1.4; }
+  .ucs-row { display: flex; gap: 10px; }
+  .ucs-row > * { flex: 1; }
+
+  .ucs-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+  .ucs-btn {
+    padding: 9px 12px; border-radius: 9px; border: 1px solid rgba(255,255,255,0.12);
+    background: #241d18; color: #f4f0ea; font-size: 13px; cursor: pointer; text-align: center;
+  }
+  .ucs-btn:hover { background: #2c231c; }
+  .ucs-btn--accent { background: #e2820a; border-color: #e2820a; color: #1a1512; font-weight: 700; }
+  .ucs-btn--accent:hover { background: #f2900f; }
+  .ucs-copied { font-size: 12px; color: #7bd88f; height: 14px; margin-top: 2px; }
+</style>
+</head>
+<body>
+  <div class="ucs-root">
+    <div class="ucs-form">
+      <h1>Общий чат (Twitch + YouTube)</h1>
+      <p class="ucs-sub">Меняешь настройки слева — справа сразу видно, как это будет выглядеть.</p>
+
+      <div class="ucs-section">
+        <h2>Подключение</h2>
+        <label class="ucs-field">
+          <span class="ucs-label">Логин канала Twitch</span>
+          <input type="text" id="f-twitchChannel" placeholder="my_channel" />
+        </label>
+
+        <label class="ucs-field">
+          <span class="ucs-label">Канал YouTube</span>
+          <input type="text" id="f-youtubeChannel" placeholder="@my_channel или ссылка на канал" />
+        </label>
+        <p class="ucs-hint">Достаточно вписать один раз — внутри FoxFire Hub текущая трансляция находится автоматически и бесплатно. Video ID вводить не нужно.</p>
+
+        <label class="ucs-field">
+          <span class="ucs-label">API-ключ YouTube (свой, бесплатный)</span>
+          <input type="text" id="f-youtubeApiKey" placeholder="AIzaSy..." />
+        </label>
+        <p class="ucs-hint">Нужен только для чтения сообщений — как получить, см. README виджета. Без ключа YouTube-часть просто не подключится, Twitch продолжит работать.</p>
+
+        <label class="ucs-field">
+          <span class="ucs-label">Video ID вручную (запасной вариант)</span>
+          <input type="text" id="f-youtubeVideoIdOverride" placeholder="необязательно" />
+        </label>
+        <p class="ucs-hint">Заполняй, только если авто-поиск почему-то не сработал — тогда виджет использует именно этот Video ID и сам ничего не ищет.</p>
+      </div>
+
+      <div class="ucs-section">
+        <h2>Лента сообщений</h2>
+        <label class="ucs-field">
+          <span class="ucs-label">Направление</span>
+          <select id="f-direction">
+            <option>Новые снизу</option>
+            <option>Новые сверху</option>
+          </select>
+        </label>
+        <div class="ucs-row">
+          <label class="ucs-field"><span class="ucs-label">Сообщений на экране</span><input type="number" id="f-maxMessages" /></label>
+          <label class="ucs-field"><span class="ucs-label">Отступ между (px)</span><input type="number" id="f-messageSpacing" /></label>
+        </div>
+        <label class="ucs-checkbox"><input type="checkbox" id="f-showTimestamps" /> Показывать время сообщения</label>
+        <label class="ucs-checkbox"><input type="checkbox" id="f-highlightModActions" /> Показывать действия модераторов (таймауты, удаления)</label>
+      </div>
+
+      <div class="ucs-section">
+        <h2>Шрифт и анимация</h2>
+        <label class="ucs-field">
+          <span class="ucs-label">Шрифт</span>
+          <select id="f-fontFamily">
+            <option>Системный (по умолчанию)</option>
+            <option>Segoe UI</option>
+            <option>Arial</option>
+            <option>Verdana</option>
+            <option>Georgia</option>
+            <option>Comic Sans MS</option>
+            <option>Свой шрифт...</option>
+          </select>
+        </label>
+        <label class="ucs-field" id="f-fontFamilyCustomWrap" style="display:none">
+          <span class="ucs-label">Название своего шрифта (как в системе)</span>
+          <input type="text" id="f-fontFamilyCustom" placeholder="например: Montserrat" />
+        </label>
+        <label class="ucs-field">
+          <span class="ucs-label">Анимация появления</span>
+          <select id="f-animationStyle">
+            <option>Плавно (fade)</option>
+            <option>Снизу вверх</option>
+            <option>Слева</option>
+            <option>Без анимации</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="ucs-section">
+        <h2>Стилистика</h2>
+        <div class="ucs-row">
+          <label class="ucs-field"><span class="ucs-label">Размер шрифта (px)</span><input type="number" id="f-fontSize" /></label>
+          <label class="ucs-field"><span class="ucs-label">Масштаб (%)</span><input type="number" id="f-scale" /></label>
+        </div>
+        <div class="ucs-row">
+          <label class="ucs-field"><span class="ucs-label">Скругление углов (px)</span><input type="number" id="f-cornerRadius" /></label>
+          <label class="ucs-field"><span class="ucs-label">Непрозрачность фона (%)</span><input type="number" id="f-bgOpacity" /></label>
+        </div>
+        <div class="ucs-row">
+          <label class="ucs-field"><span class="ucs-label">Цвет текста</span><input type="color" id="f-textColor" /></label>
+          <label class="ucs-field"><span class="ucs-label">Акцентный цвет</span><input type="color" id="f-accentColor" /></label>
+        </div>
+        <label class="ucs-checkbox"><input type="checkbox" id="f-showPlatformIcons" /> Показывать значок площадки</label>
+        <label class="ucs-checkbox"><input type="checkbox" id="f-showBadges" /> Показывать бейджи (SVG-иконки)</label>
+        <label class="ucs-checkbox"><input type="checkbox" id="f-enableThirdPartyEmotes" /> Сторонние эмоуты Twitch (7TV, BetterTTV — глобальные)</label>
+      </div>
+
+      <div class="ucs-section">
+        <label class="ucs-checkbox"><input type="checkbox" id="f-demoMode" checked /> Демо-сообщения в предпросмотре (вместо реального подключения)</label>
+      </div>
+
+      <div class="ucs-actions">
+        <div class="ucs-btn ucs-btn--accent" id="btn-copy-obs">Скопировать ссылку для OBS</div>
+        <div class="ucs-btn" id="btn-save">Сохранить</div>
+        <div class="ucs-copied" id="copied-note"></div>
+      </div>
+    </div>
+
+    <div class="ucs-preview">
+      <div class="ucs-preview-bar">Предпросмотр · <strong id="preview-caption">демо-режим</strong></div>
+      <iframe id="preview-frame" src="index.html"></iframe>
+    </div>
+  </div>
+
+  <script>
+    // === Значения по умолчанию — держим в синхронизации с DEFAULTS в
+    // index.html и с configSchema в widget.manifest.json. ===
+    const DEFAULTS = {
+      twitchChannel: "", youtubeChannel: "", youtubeApiKey: "", youtubeVideoIdOverride: "",
+      direction: "Новые снизу", fontFamily: "Системный (по умолчанию)", fontFamilyCustom: "",
+      animationStyle: "Плавно (fade)", scale: 100, fontSize: 18, messageSpacing: 6,
+      cornerRadius: 16, maxMessages: 40, bgOpacity: 55, showPlatformIcons: true,
+      showBadges: true, showTimestamps: false, highlightModActions: true,
+      enableThirdPartyEmotes: true, textColor: "#f4f0ea", accentColor: "#e2820a",
+    };
+
+    // Начальные значения — из query-параметров этого окна, если оно открыто
+    // с уже сохранённым конфигом (та же схема параметров, что у index.html),
+    // иначе — значения по умолчанию.
+    function initialConfig() {
+      const params = new URLSearchParams(window.location.search);
+      const cfg = { ...DEFAULTS };
+      Object.keys(DEFAULTS).forEach((key) => {
+        if (!params.has(key)) return;
+        const raw = params.get(key);
+        if (typeof DEFAULTS[key] === "boolean") cfg[key] = raw === "true";
+        else if (typeof DEFAULTS[key] === "number") cfg[key] = Number.parseFloat(raw) || DEFAULTS[key];
+        else cfg[key] = raw;
+      });
+      return cfg;
+    }
+
+    let config = initialConfig();
+
+    // Встроена ли эта страница настроек прямо в окно FoxFire Hub (вкладка
+    // "Загруженное", см. SYSTEM_WIDGET_STYLE.md раздел 11) — тогда
+    // window.parent !== window, и есть кому слать postMessage. Если страница
+    // открыта отдельно (например, вручную двойным кликом по файлу, или в
+    // старой версии Hub через отдельное окно) — window.parent === window.
+    const isEmbeddedInHub = window.parent && window.parent !== window;
+
+    const fields = {};
+    Object.keys(DEFAULTS).forEach((key) => {
+      fields[key] = document.getElementById("f-" + key);
+    });
+    const demoCheckbox = document.getElementById("f-demoMode");
+
+    function fillFormFromConfig() {
+      Object.keys(DEFAULTS).forEach((key) => {
+        const el = fields[key];
+        if (!el) return;
+        if (el.type === "checkbox") el.checked = !!config[key];
+        else el.value = config[key];
+      });
+      document.getElementById("f-fontFamilyCustomWrap").style.display =
+        config.fontFamily === "Свой шрифт..." ? "block" : "none";
+    }
+
+    function readFormIntoConfig() {
+      Object.keys(DEFAULTS).forEach((key) => {
+        const el = fields[key];
+        if (!el) return;
+        if (el.type === "checkbox") config[key] = el.checked;
+        else if (typeof DEFAULTS[key] === "number") config[key] = Number.parseFloat(el.value) || 0;
+        else config[key] = el.value;
+      });
+    }
+
+    const iframe = document.getElementById("preview-frame");
+    const captionEl = document.getElementById("preview-caption");
+
+    function pushToPreview(forceReconnect) {
+      const demo = demoCheckbox.checked;
+      captionEl.textContent = demo
+        ? "демо-режим"
+        : (config.twitchChannel || config.youtubeChannel || config.youtubeVideoIdOverride)
+          ? "реальное подключение"
+          : "нет данных для подключения";
+      iframe.contentWindow.postMessage({ type: "unifiedchat:config", config, demo, forceReconnect }, "*");
+    }
+
+    // === Отправка настроек в FoxFire Hub ===
+    // Новый способ (с версии 2.0.0 виджета / Hub 0.1.6+): встроенная страница
+    // настроек шлёт весь конфиг родительскому окну через postMessage — это
+    // единственное, что нужно понимать Hub-у, никакого Tauri-события. Формат
+    // фиксирован в SYSTEM_WIDGET_STYLE.md, раздел 11.
+    function notifyHubEmbedded(cfg) {
+      if (!isEmbeddedInHub) return false;
+      window.parent.postMessage(
+        { type: "foxfirehub:settings-saved", widgetId: "unified-chat", config: cfg },
+        "*"
+      );
+      return true;
+    }
+
+    function onFieldChange() {
+      readFormIntoConfig();
+      document.getElementById("f-fontFamilyCustomWrap").style.display =
+        config.fontFamily === "Свой шрифт..." ? "block" : "none";
+      pushToPreview(false);
+      // Живое сохранение: если страница встроена в Hub, каждое изменение поля
+      // сразу применяется, без отдельного клика на "Сохранить" — так же, как
+      // это уже работает в автоформе Hub для обычных виджетов.
+      notifyHubEmbedded(config);
+    }
+
+    Object.values(fields).forEach((el) => {
+      if (!el) return;
+      el.addEventListener("input", onFieldChange);
+      el.addEventListener("change", onFieldChange);
+    });
+    demoCheckbox.addEventListener("change", () => pushToPreview(true));
+
+    iframe.addEventListener("load", () => {
+      fillFormFromConfig();
+      pushToPreview(true);
+    });
+
+    // === Ссылка для OBS: та же query-строка, что понимает index.html ===
+    function buildQueryString(cfg) {
+      const params = new URLSearchParams();
+      Object.keys(DEFAULTS).forEach((key) => params.set(key, String(cfg[key])));
+      return params.toString();
+    }
+
+    document.getElementById("btn-copy-obs").addEventListener("click", async () => {
+      readFormIntoConfig();
+      const indexUrl = new URL("index.html", window.location.href).toString();
+      const link = indexUrl + "?" + buildQueryString(config);
+      try {
+        await navigator.clipboard.writeText(link);
+        document.getElementById("copied-note").textContent = "Ссылка скопирована в буфер обмена ✓";
+      } catch (err) {
+        document.getElementById("copied-note").textContent = "Не удалось скопировать автоматически — ссылка в консоли (F12).";
+        console.log("unified-chat OBS link:", link);
+      }
+      setTimeout(() => { document.getElementById("copied-note").textContent = ""; }, 4000);
+    });
+
+    // === "Сохранить" ===
+    // 1) Встроена в FoxFire Hub (текущий способ, см. SYSTEM_WIDGET_STYLE.md,
+    //    раздел 11) — конфиг уже сохраняется живьём при каждом изменении поля
+    //    (notifyHubEmbedded в onFieldChange), кнопка здесь просто ещё раз
+    //    подтверждает сохранение и показывает пользователю галочку.
+    // 2) Legacy: открыта в отдельном окне Tauri (старые версии Hub, которые
+    //    открывали settings.html через WebviewWindow) — возвращаем настройки
+    //    через Tauri-событие и закрываем окно, как раньше.
+    // 3) Открыта совсем отдельно (просто как файл, без Hub) — сохранять
+    //    некуда, предлагаем скопировать ссылку для OBS.
+    document.getElementById("btn-save").addEventListener("click", async () => {
+      readFormIntoConfig();
+
+      if (notifyHubEmbedded(config)) {
+        document.getElementById("copied-note").textContent = "Настройки сохранены ✓";
+        setTimeout(() => { document.getElementById("copied-note").textContent = ""; }, 2000);
+        return;
+      }
+
+      if (window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.emit) {
+        try {
+          await window.__TAURI__.event.emit("unifiedchat:settings-saved", config);
+          if (window.__TAURI__.window && window.__TAURI__.window.getCurrent) {
+            window.__TAURI__.window.getCurrent().close();
+          }
+          return;
+        } catch (err) {
+          console.warn("unified-chat: не удалось отправить настройки обратно в Hub", err);
+        }
+      }
+      document.getElementById("copied-note").textContent =
+        "Окно открыто отдельно от FoxFire Hub — сохранить некуда. Нажми «Скопировать ссылку для OBS».";
+    });
+  </script>
+</body>
+</html>

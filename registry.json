@@ -1,5 +1,169 @@
 [
   {
+    "id": "unified-chat",
+    "name": "Общий чат (Twitch + YouTube)",
+    "author": {
+      "name": "FoxFire Hub Team",
+      "url": "https://github.com/FoxFireUwU"
+    },
+    "rating": 0,
+    "tags": [
+      "OBS",
+      "Chat",
+      "Twitch",
+      "YouTube",
+      "Windows",
+      "Mac",
+      "Linux"
+    ],
+    "shortDescription": "Склеивает чаты Twitch и YouTube в одну ленту — для стримера и для зрителей на оверлее.",
+    "fullDescription": "Когда стрим идёт одновременно на Twitch и YouTube, сообщения из обоих чатов показываются одной общей лентой, отсортированной по времени — не нужно бегать глазами между двумя окнами. Виджет можно использовать и как личный второй монитор стримера (окно самого FoxFire Hub), и как оверлей поверх стрима для зрителей (источник \"Браузер\" в OBS) — тогда зрители на любой площадке видят сообщения из обеих одновременно.\n\nTwitch подключается анонимно (без токена и без входа в аккаунт) — просто впиши логин канала. Для YouTube достаточно один раз указать канал (ссылку, @handle или ID) — внутри FoxFire Hub виджет сам находит текущую трансляцию бесплатно, без ручного копирования Video ID перед каждым эфиром (при запуске как обычный файл в OBS, без FoxFire Hub рядом, доступен резервный способ через официальный YouTube Data API — см. README). Для чтения самих сообщений чата YouTube по-прежнему нужен свой бесплатный API-ключ Google — единственный официальный способ, у YouTube нет анонимного протокола чтения чата, как у Twitch.\n\nЕсть отдельное окно настроек с живым предпросмотром: SVG-иконки бейджей вместо эмодзи, выбор шрифта (безопасный набор + свой шрифт с ПК), несколько анимаций появления сообщений, гибкая стилистика (масштаб, отступы, скругления, акцентный цвет), показ действий модераторов (таймауты/удаление сообщений), поддержка сторонних Twitch-эмоутов (7TV, BetterTTV) в дополнение к нативным. Суперчаты YouTube подсвечиваются акцентным цветом отдельно. Работать может и с одной площадкой — оставь поле второй пустым.",
+    "previewUrl": "https://raw.githubusercontent.com/FoxFireUwU/foxfire-hub-widgets/main/widgets/unified-chat/screenshots/01.png",
+    "configSchema": {
+      "twitchChannel": {
+        "type": "text",
+        "label": "Логин канала Twitch",
+        "default": ""
+      },
+      "youtubeChannel": {
+        "type": "text",
+        "label": "Канал YouTube (ссылка, @handle или ID канала)",
+        "default": ""
+      },
+      "youtubeApiKey": {
+        "type": "text",
+        "label": "API-ключ YouTube (свой)",
+        "default": ""
+      },
+      "youtubeVideoIdOverride": {
+        "type": "text",
+        "label": "Video ID вручную (необязательно, для запасного варианта)",
+        "default": ""
+      },
+      "direction": {
+        "type": "select",
+        "label": "Направление ленты",
+        "default": "Новые снизу",
+        "options": [
+          "Новые снизу",
+          "Новые сверху"
+        ]
+      },
+      "fontFamily": {
+        "type": "select",
+        "label": "Шрифт",
+        "default": "Системный (по умолчанию)",
+        "options": [
+          "Системный (по умолчанию)",
+          "Segoe UI",
+          "Arial",
+          "Verdana",
+          "Georgia",
+          "Comic Sans MS",
+          "Свой шрифт..."
+        ]
+      },
+      "fontFamilyCustom": {
+        "type": "text",
+        "label": "Свой шрифт (если выбрано \"Свой шрифт...\")",
+        "default": ""
+      },
+      "animationStyle": {
+        "type": "select",
+        "label": "Анимация появления сообщений",
+        "default": "Плавно (fade)",
+        "options": [
+          "Плавно (fade)",
+          "Снизу вверх",
+          "Слева",
+          "Без анимации"
+        ]
+      },
+      "scale": {
+        "type": "number",
+        "label": "Общий масштаб (%)",
+        "default": 100
+      },
+      "fontSize": {
+        "type": "number",
+        "label": "Размер шрифта (px)",
+        "default": 18
+      },
+      "messageSpacing": {
+        "type": "number",
+        "label": "Отступ между сообщениями (px)",
+        "default": 6
+      },
+      "cornerRadius": {
+        "type": "number",
+        "label": "Скругление углов карточки (px)",
+        "default": 16
+      },
+      "maxMessages": {
+        "type": "number",
+        "label": "Сколько сообщений держать на экране",
+        "default": 40
+      },
+      "bgOpacity": {
+        "type": "number",
+        "label": "Непрозрачность фона карточки (%)",
+        "default": 55
+      },
+      "showPlatformIcons": {
+        "type": "boolean",
+        "label": "Показывать значок площадки",
+        "default": true
+      },
+      "showBadges": {
+        "type": "boolean",
+        "label": "Показывать бейджи (модератор/VIP и т.д.)",
+        "default": true
+      },
+      "showTimestamps": {
+        "type": "boolean",
+        "label": "Показывать время сообщения",
+        "default": false
+      },
+      "highlightModActions": {
+        "type": "boolean",
+        "label": "Показывать действия модераторов (таймауты, удаление сообщений)",
+        "default": true
+      },
+      "enableThirdPartyEmotes": {
+        "type": "boolean",
+        "label": "Сторонние эмоуты Twitch (7TV, BetterTTV)",
+        "default": true
+      },
+      "textColor": {
+        "type": "color",
+        "label": "Цвет текста сообщений",
+        "default": "#f4f0ea"
+      },
+      "accentColor": {
+        "type": "color",
+        "label": "Акцентный цвет (суперчаты, скролл, рамки)",
+        "default": "#e2820a"
+      }
+    },
+    "minAppVersion": "0.1.6",
+    "versions": [
+      {
+        "version": "2.0.0",
+        "releaseDate": "2026-09-27",
+        "downloadUrl": "https://github.com/FoxFIreUwU/foxfire-hub-widgets/releases/download/unified-chat-v2.0.0/unified-chat.zip",
+        "status": "stable",
+        "statusMessage": ""
+      },
+      {
+        "version": "1.0.0",
+        "releaseDate": "2026-09-26",
+        "downloadUrl": "https://github.com/FoxFIreUwU/foxfire-hub-widgets/releases/download/unified-chat-v1.0.0/unified-chat.zip",
+        "status": "warning",
+        "statusMessage": "Устаревшая версия: Video ID YouTube нужно было вводить вручную на каждый эфир. Рекомендуем обновиться до 2.0.0."
+      }
+    ]
+  },
+  {
     "id": "stream-timer",
     "name": "Таймер стрима",
     "author": {
