@@ -50,7 +50,7 @@
       "name": "FoxFire Hub Team",
       "url": "https://github.com/FoxFireUwU"
     },
-    "rating": 78,
+    "rating": 0,
     "previewUrl": "https://raw.githubusercontent.com/FoxFireUwU/foxfire-hub-widgets/main/widgets/stream-clock/screenshots/01.png",
     "tags": [
       "OBS",
@@ -77,7 +77,7 @@
         "default": true
       }
     },
-    "minAppVersion": "0.1.0-alpha.1",
+    "minAppVersion": "0.1.5",
     "versions": [
       {
         "version": "1.0.0",
