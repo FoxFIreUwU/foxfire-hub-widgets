@@ -3,25 +3,42 @@
   "name": "Таймер стрима",
   "author": {
     "name": "FoxFire Hub Team",
-    "url": "https://github.com/YOUR_USER"
+    "url": "https://github.com/FoxFireUwU"
   },
   "rating": 80,
-  "tags": ["OBS", "Windows", "Mac", "Linux"],
+  "tags": [
+    "OBS",
+    "Windows",
+    "Mac",
+    "Linux"
+  ],
   "shortDescription": "Счётчик времени с начала стрима — просто добавь как источник \"Браузер\" в OBS.",
-  "fullDescription": "Пробный виджет для проверки каталога FoxFire Hub. Показывает время, прошедшее с момента открытия страницы, крупными цифрами по центру — удобно как элемент оверлея \"Стрим идёт уже: 01:23:45\". Цвет текста и размер шрифта настраиваются в панели виджета (configSchema), формат времени можно переключить между \"чч:мм:сс\" и \"мм:сс\". Работает полностью локально в браузере, без интернета и без каких-либо внешних сервисов — просто HTML-файл. Известное ограничение: при перезагрузке страницы источника в OBS таймер сбрасывается на ноль, так как страница открывается заново (это ожидаемое поведение для пробного виджета).",
+  "fullDescription": "Пробный виджет для проверки каталога FoxFire Hub. Показывает время, прошедшее с момента открытия страницы, крупными цифрами по центру. Цвет текста и размер шрифта настраиваются, формат времени можно переключить между \"чч:мм:сс\" и \"мм:сс\". Работает полностью локально, без интернета. Известное ограничение: при перезагрузке страницы источника в OBS таймер сбрасывается на ноль.",
   "configSchema": {
-    "textColor": { "type": "color", "label": "Цвет текста", "default": "#e2820a" },
-    "fontSize": { "type": "number", "label": "Размер шрифта (px)", "default": 64 },
-    "longFormat": { "type": "boolean", "label": "Формат чч:мм:сс (вместо мм:сс)", "default": true }
+    "textColor": {
+      "type": "color",
+      "label": "Цвет текста",
+      "default": "#e2820a"
+    },
+    "fontSize": {
+      "type": "number",
+      "label": "Размер шрифта (px)",
+      "default": 64
+    },
+    "longFormat": {
+      "type": "boolean",
+      "label": "Формат чч:мм:сс (вместо мм:сс)",
+      "default": true
+    }
   },
   "minAppVersion": "0.1.0-alpha.1",
   "versions": [
     {
       "version": "1.0.0",
       "releaseDate": "2026-09-25",
-      "downloadUrl": "https://github.com/YOUR_USER/YOUR_REGISTRY_REPO/releases/download/stream-timer-v1.0.0/stream-timer.zip",
-      "status": "stable",
-      "statusMessage": ""
+      "downloadUrl": "https://github.com/FoxFireUwU/foxfire-hub-widgets/releases/download/stream-timer-v1.0.0/stream-timer.zip",
+      "status": "unavailable",
+      "statusMessage": "Временно недоступно"
     }
   ]
 }
