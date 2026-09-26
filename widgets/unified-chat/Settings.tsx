@@ -11,8 +11,10 @@ import { useState } from "react";
 
 interface UnifiedChatConfig {
   twitchChannel: string;
+  youtubeMode: "Вручную (Video ID + ключ)" | "Вход через Google (авто)";
   youtubeVideoId: string;
   youtubeApiKey: string;
+  googleClientId: string;
   direction: "Новые снизу" | "Новые сверху";
   fontSize: number;
   maxMessages: number;
@@ -50,7 +52,15 @@ export default function UnifiedChatSettings({ value, onChange }: UnifiedChatSett
       </label>
 
       <label>
-        Video ID трансляции YouTube
+        Режим YouTube
+        <select value={config.youtubeMode} onChange={(e) => update("youtubeMode", e.target.value as UnifiedChatConfig["youtubeMode"])}>
+          <option value="Вручную (Video ID + ключ)">Вручную (Video ID + ключ)</option>
+          <option value="Вход через Google (авто)">Вход через Google (авто)</option>
+        </select>
+      </label>
+
+      <label>
+        Video ID трансляции (для режима "Вручную")
         <input
           type="text"
           value={config.youtubeVideoId}
@@ -60,12 +70,22 @@ export default function UnifiedChatSettings({ value, onChange }: UnifiedChatSett
       </label>
 
       <label>
-        API-ключ YouTube (свой)
+        API-ключ YouTube (для режима "Вручную")
         <input
           type="text"
           value={config.youtubeApiKey}
           onChange={(e) => update("youtubeApiKey", e.target.value)}
           placeholder="AIzaSy..."
+        />
+      </label>
+
+      <label>
+        Google Client ID (для режима "Вход через Google")
+        <input
+          type="text"
+          value={config.googleClientId}
+          onChange={(e) => update("googleClientId", e.target.value)}
+          placeholder="1234567890-abc.apps.googleusercontent.com"
         />
       </label>
 

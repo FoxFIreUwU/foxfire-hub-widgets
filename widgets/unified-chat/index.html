@@ -92,10 +92,32 @@
     color: #e2820a;
     font-size: 0.85em;
   }
+
+  .unifiedchat-status {
+    display: none;
+    margin-bottom: 8px;
+    padding: 8px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(226, 130, 10, 0.4);
+    background: rgba(226, 130, 10, 0.1);
+    color: #f4f0ea;
+    font-size: 0.85em;
+    line-height: 1.4;
+  }
+  .unifiedchat-status.unifiedchat-status--visible { display: block; }
+  .unifiedchat-status code {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 1px 6px;
+    border-radius: 6px;
+    color: #e2820a;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
 </style>
 </head>
 <body>
   <div class="unifiedchat-root">
+    <div class="unifiedchat-status" id="unifiedchat-status"></div>
     <div class="unifiedchat-feed" id="unifiedchat-feed"></div>
   </div>
 
@@ -107,8 +129,11 @@
     const params = new URLSearchParams(window.location.search);
 
     const twitchChannel = (params.get("twitchChannel") || "").trim().toLowerCase().replace(/^#/, "");
+    const youtubeModeLabel = params.get("youtubeMode") || "Вручную (Video ID + ключ)";
+    const useGoogleLogin = youtubeModeLabel === "Вход через Google (авто)";
     const youtubeVideoId = (params.get("youtubeVideoId") || "").trim();
     const youtubeApiKey = (params.get("youtubeApiKey") || "").trim();
+    const googleClientId = (params.get("googleClientId") || "").trim();
     const directionLabel = params.get("direction") || "Новые снизу";
     const direction = directionLabel === "Новые сверху" ? "top" : "bottom";
     const fontSize = Number.parseInt(params.get("fontSize") || "18", 10);
@@ -120,9 +145,19 @@
     const textColor = params.get("textColor") || "#f4f0ea";
 
     const feed = document.getElementById("unifiedchat-feed");
+    const statusEl = document.getElementById("unifiedchat-status");
     feed.style.background = `rgba(26, 21, 18, ${bgOpacity / 100})`;
     document.body.style.fontSize = fontSize + "px";
     feed.style.color = textColor;
+
+    function showStatus(html) {
+      statusEl.innerHTML = html;
+      statusEl.classList.add("unifiedchat-status--visible");
+    }
+    function hideStatus() {
+      statusEl.classList.remove("unifiedchat-status--visible");
+      statusEl.innerHTML = "";
+    }
 
     function escapeHtml(str) {
       return String(str)
@@ -178,9 +213,10 @@
       }
     }
 
-    if (!twitchChannel && !(youtubeVideoId && youtubeApiKey)) {
+    const youtubeConfigured = useGoogleLogin ? !!googleClientId : !!(youtubeVideoId && youtubeApiKey);
+    if (!twitchChannel && !youtubeConfigured) {
       feed.innerHTML =
-        '<div class="unifiedchat-empty">Настройте виджет: укажите канал Twitch и/или Video ID + API-ключ YouTube в настройках карточки.</div>';
+        '<div class="unifiedchat-empty">Настройте виджет: укажите канал Twitch и/или данные YouTube (Video ID + ключ, или Google Client ID для входа) в настройках карточки.</div>';
     }
 
     // ================= TWITCH (анонимное подключение к IRC по WebSocket) =================
@@ -325,19 +361,29 @@
       return item && item.liveStreamingDetails ? item.liveStreamingDetails.activeLiveChatId : null;
     }
 
-    async function pollYoutube(liveChatId, apiKey, pageToken) {
+    // auth — либо { mode: "key", apiKey }, либо { mode: "oauth", getToken: async () => accessToken }
+    async function pollYoutube(liveChatId, auth, pageToken) {
       let nextDelay = 5000;
       try {
         let url =
           `https://www.googleapis.com/youtube/v3/liveChat/messages?liveChatId=${encodeURIComponent(liveChatId)}` +
-          `&part=snippet,authorDetails&key=${encodeURIComponent(apiKey)}`;
+          `&part=snippet,authorDetails`;
+        const headers = {};
+        if (auth.mode === "key") {
+          url += `&key=${encodeURIComponent(auth.apiKey)}`;
+        } else {
+          headers.Authorization = "Bearer " + (await auth.getToken());
+        }
         if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
 
-        const res = await fetch(url);
+        const res = await fetch(url, { headers });
         const data = await res.json();
 
         if (data.error) {
           console.warn("unified-chat: YouTube API вернул ошибку", data.error.message);
+          if (auth.mode === "oauth" && data.error.code === 401) {
+            clearGoogleToken(); // токен протух/отозван — при следующей попытке попросим войти заново
+          }
           nextDelay = 30000; // скорее всего квота — не долбим API чаще раза в 30с
         } else {
           (data.items || []).forEach((item) => {
@@ -361,28 +407,190 @@
         console.warn("unified-chat: не удалось опросить YouTube чат", err);
         nextDelay = 15000;
       }
-      setTimeout(() => pollYoutube(liveChatId, apiKey, pageToken), nextDelay);
+      setTimeout(() => pollYoutube(liveChatId, auth, pageToken), nextDelay);
     }
 
-    async function connectYoutube(videoId, apiKey) {
+    // ---- Режим 1: вручную (Video ID + API-ключ) ----
+    async function connectYoutubeManual(videoId, apiKey) {
       if (!videoId || !apiKey) return;
       try {
         const liveChatId = await fetchLiveChatId(videoId, apiKey);
         if (!liveChatId) {
           console.warn("unified-chat: у этого видео нет активного live-чата (проверь Video ID)");
-          setTimeout(() => connectYoutube(videoId, apiKey), 20000);
+          setTimeout(() => connectYoutubeManual(videoId, apiKey), 20000);
           return;
         }
-        pollYoutube(liveChatId, apiKey);
+        pollYoutube(liveChatId, { mode: "key", apiKey });
       } catch (err) {
         console.warn("unified-chat: ошибка при поиске live-чата YouTube", err);
-        setTimeout(() => connectYoutube(videoId, apiKey), 20000);
+        setTimeout(() => connectYoutubeManual(videoId, apiKey), 20000);
+      }
+    }
+
+    // ---- Режим 2: вход через Google (Device Code Flow, без Video ID) ----
+    // Это тот же механизм, которым Google авторизует приложения на телевизорах
+    // и консолях без полноценного браузера — идеально подходит для статического
+    // виджета без своего сервера. Нужен собственный OAuth Client ID типа "TV и
+    // устройства с ограниченным вводом" (создаётся бесплатно, без клиентского
+    // секрета — см. README). Технически это два прямых запроса к серверам
+    // Google из этой же страницы; сработает, если Google не блокирует их по
+    // происхождению (Google явно этого не гарантирует, но флоу для этого и
+    // задуман). Если не сработает — используй режим "Вручную" выше.
+    const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
+    const GOOGLE_DEVICE_CODE_URL = "https://oauth2.googleapis.com/device/code";
+    const YT_READONLY_SCOPE = "https://www.googleapis.com/auth/youtube.readonly";
+    const GOOGLE_TOKEN_STORAGE_KEY = "unifiedchat_google_token_v1";
+
+    function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+
+    function loadGoogleToken() {
+      try {
+        const raw = localStorage.getItem(GOOGLE_TOKEN_STORAGE_KEY);
+        return raw ? JSON.parse(raw) : null;
+      } catch (_) { return null; }
+    }
+    function saveGoogleToken(tok) {
+      try { localStorage.setItem(GOOGLE_TOKEN_STORAGE_KEY, JSON.stringify(tok)); } catch (_) { /* нет доступа к localStorage — переживём, просто спросим вход снова */ }
+    }
+    function clearGoogleToken() {
+      try { localStorage.removeItem(GOOGLE_TOKEN_STORAGE_KEY); } catch (_) { /* игнорируем */ }
+    }
+
+    async function refreshGoogleToken(refreshToken) {
+      const body = new URLSearchParams({
+        client_id: googleClientId,
+        refresh_token: refreshToken,
+        grant_type: "refresh_token",
+      });
+      const res = await fetch(GOOGLE_TOKEN_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error_description || data.error);
+      const tok = {
+        access_token: data.access_token,
+        refresh_token: refreshToken, // ответ на refresh обычно не содержит новый refresh_token
+        expires_at: Date.now() + (data.expires_in || 3600) * 1000,
+      };
+      saveGoogleToken(tok);
+      return tok;
+    }
+
+    async function startDeviceFlow() {
+      const body = new URLSearchParams({ client_id: googleClientId, scope: YT_READONLY_SCOPE });
+      const res = await fetch(GOOGLE_DEVICE_CODE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error_description || data.error);
+      return data; // { device_code, user_code, verification_url, expires_in, interval }
+    }
+
+    async function pollDeviceToken(deviceCode, intervalSeconds, deadline) {
+      let interval = intervalSeconds || 5;
+      while (Date.now() < deadline) {
+        await sleep(interval * 1000);
+        const body = new URLSearchParams({
+          client_id: googleClientId,
+          device_code: deviceCode,
+          grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+        });
+        const res = await fetch(GOOGLE_TOKEN_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body,
+        });
+        const data = await res.json();
+        if (data.error === "authorization_pending") continue;
+        if (data.error === "slow_down") { interval += 5; continue; }
+        if (data.error) throw new Error(data.error_description || data.error);
+        const tok = {
+          access_token: data.access_token,
+          refresh_token: data.refresh_token,
+          expires_at: Date.now() + (data.expires_in || 3600) * 1000,
+        };
+        saveGoogleToken(tok);
+        return tok;
+      }
+      throw new Error("время на вход истекло, обновите виджет и попробуйте снова");
+    }
+
+    async function getValidGoogleToken() {
+      let tok = loadGoogleToken();
+      if (tok && tok.expires_at - Date.now() > 60000) return tok;
+      if (tok && tok.refresh_token) {
+        try { return await refreshGoogleToken(tok.refresh_token); }
+        catch (_) { clearGoogleToken(); }
+      }
+      showStatus("Вход через Google: получаем код…");
+      const dc = await startDeviceFlow();
+      showStatus(
+        `Войдите через Google, чтобы виджет сам нашёл текущий эфир:<br/>` +
+        `откройте <b>${escapeHtml(dc.verification_url)}</b> и введите код <code>${escapeHtml(dc.user_code)}</code>`
+      );
+      const newTok = await pollDeviceToken(dc.device_code, dc.interval, Date.now() + (dc.expires_in || 1800) * 1000);
+      hideStatus();
+      return newTok;
+    }
+
+    async function fetchActiveLiveChatIdOAuth(accessToken) {
+      const url = "https://www.googleapis.com/youtube/v3/liveBroadcasts?part=snippet&broadcastStatus=active&broadcastType=all";
+      const res = await fetch(url, { headers: { Authorization: "Bearer " + accessToken } });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message || "YouTube API error");
+      const item = data.items && data.items[0];
+      return item ? item.snippet.liveChatId : null;
+    }
+
+    async function findAndConnectActiveBroadcast(auth) {
+      let liveChatId;
+      try {
+        const accessToken = await auth.getToken();
+        liveChatId = await fetchActiveLiveChatIdOAuth(accessToken);
+      } catch (err) {
+        console.warn("unified-chat: ошибка поиска активной трансляции YouTube", err);
+        setTimeout(() => findAndConnectActiveBroadcast(auth), 20000);
+        return;
+      }
+      if (!liveChatId) {
+        showStatus("Вход выполнен. Жду начала трансляции на YouTube…");
+        setTimeout(() => findAndConnectActiveBroadcast(auth), 20000);
+        return;
+      }
+      hideStatus();
+      pollYoutube(liveChatId, auth);
+    }
+
+    async function connectYoutubeGoogleLogin(clientId) {
+      if (!clientId) {
+        showStatus("Укажите Google Client ID в настройках виджета, чтобы включить вход через Google (см. README).");
+        return;
+      }
+      const auth = { mode: "oauth", getToken: async () => (await getValidGoogleToken()).access_token };
+      try {
+        await auth.getToken(); // выполнит вход/обновление токена сразу, покажет код если нужно
+        await findAndConnectActiveBroadcast(auth);
+      } catch (err) {
+        console.warn("unified-chat: вход через Google не удался", err);
+        showStatus(
+          "Не удалось войти через Google (" + escapeHtml(err.message || String(err)) + "). " +
+          "Похоже, этот способ недоступен в вашем окружении — переключите виджет на режим " +
+          "«Вручную (Video ID + ключ)» в настройках карточки."
+        );
       }
     }
 
     // === Запуск ===
     connectTwitch(twitchChannel);
-    connectYoutube(youtubeVideoId, youtubeApiKey);
+    if (useGoogleLogin) {
+      connectYoutubeGoogleLogin(googleClientId);
+    } else {
+      connectYoutubeManual(youtubeVideoId, youtubeApiKey);
+    }
   </script>
 </body>
 </html>
