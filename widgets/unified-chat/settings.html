@@ -6,14 +6,7 @@
 <style>
   /* Тот же принцип изоляции стилей, что и в index.html — префикс "ucs-"
      (unified-chat-settings), чтобы не конфликтовать с Hub. Палитра — фирменная
-     FoxFire (SYSTEM_MAIN_APP.md): #0d0c0f фон, #1a1512 карточки, #e2820a акцент.
-     Элементы "хрома" самой страницы настроек (активные вкладки/кнопки/заголовки
-     разделов — НЕ цвета самой ленты чата, это отдельные настройки ниже) берут
-     var(--hub-accent, #e2820a) — если Hub передал свою тему (см.
-     foxfirehub-bridge.js → applyHubTheme в конце файла), подхватывается личный
-     акцентный цвет пользователя из раздела "Внешний вид" Hub; если тема
-     недоступна (страница открыта не из Hub, или из старой версии Hub) —
-     используется обычный фирменный #e2820a, как и раньше. */
+     FoxFire (SYSTEM_MAIN_APP.md): #0d0c0f фон, #1a1512 карточки, #e2820a акцент. */
   * { box-sizing: border-box; }
   html, body {
     margin: 0; padding: 0; height: 100%;
@@ -54,7 +47,7 @@
     border: none; background: #1a1512; color: #a89a8c; font-size: 12px; padding: 6px 10px;
     cursor: pointer; font-family: inherit;
   }
-  .ucs-segmented button.active { background: var(--hub-accent, #e2820a); color: #1a1512; font-weight: 700; }
+  .ucs-segmented button.active { background: #e2820a; color: #1a1512; font-weight: 700; }
   .ucs-preview-test-btn {
     border: 1px solid rgba(255,255,255,0.12); background: #241d18; color: #f4f0ea;
     font-size: 12px; padding: 6px 10px; border-radius: 8px; cursor: pointer; font-family: inherit;
@@ -66,7 +59,7 @@
   .ucs-section { margin-bottom: 22px; }
   .ucs-section h2 {
     font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em;
-    color: var(--hub-accent, #e2820a); margin: 0 0 10px; font-weight: 700;
+    color: #e2820a; margin: 0 0 10px; font-weight: 700;
   }
   label.ucs-field { display: block; margin-bottom: 12px; font-size: 13px; color: #d8cfc5; }
   label.ucs-field span.ucs-label { display: block; margin-bottom: 4px; }
@@ -93,7 +86,7 @@
     flex: 1; padding: 7px 0; text-align: center; border-radius: 8px; cursor: pointer;
     border: 1px solid rgba(255,255,255,0.12); background: #0f0c0a; color: #d8cfc5; font-size: 13px;
   }
-  .ucs-toggle-btn.active { background: var(--hub-accent, #e2820a); border-color: var(--hub-accent, #e2820a); color: #1a1512; font-weight: 700; }
+  .ucs-toggle-btn.active { background: #e2820a; border-color: #e2820a; color: #1a1512; font-weight: 700; }
 
   /* Подвкладки "Шрифт / Текст / Тень" внутри раздела "Текст сообщения" */
   .ucs-subtabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.08); }
@@ -101,7 +94,7 @@
     padding: 7px 10px; font-size: 12.5px; color: #a89a8c; cursor: pointer;
     border-bottom: 2px solid transparent; margin-bottom: -1px;
   }
-  .ucs-subtab.active { color: var(--hub-accent, #e2820a); border-bottom-color: var(--hub-accent, #e2820a); font-weight: 700; }
+  .ucs-subtab.active { color: #e2820a; border-bottom-color: #e2820a; font-weight: 700; }
   .ucs-subpanel { display: none; }
   .ucs-subpanel.active { display: block; }
 
@@ -122,8 +115,8 @@
     background: #241d18; color: #f4f0ea; font-size: 13px; cursor: pointer; text-align: center;
   }
   .ucs-btn:hover { background: #2c231c; }
-  .ucs-btn--accent { background: var(--hub-accent, #e2820a); border-color: var(--hub-accent, #e2820a); color: #1a1512; font-weight: 700; }
-  .ucs-btn--accent:hover { background: var(--hub-accent-dark, #f2900f); }
+  .ucs-btn--accent { background: #e2820a; border-color: #e2820a; color: #1a1512; font-weight: 700; }
+  .ucs-btn--accent:hover { background: #f2900f; }
   .ucs-copied { font-size: 12px; color: #7bd88f; height: 14px; margin-top: 2px; }
 </style>
 </head>
@@ -336,15 +329,7 @@
     </div>
   </div>
 
-  <script src="foxfirehub-bridge.js"></script>
   <script>
-    // Подхватываем тему Hub (если она передана в __hubTheme) как CSS-
-    // переменные --hub-accent/--hub-accent-dark и т.д. — см. правки в <style>
-    // выше. Если бридж не подключился или темы нет (страница открыта не из
-    // Hub) — applyHubTheme() просто ничего не делает, у всех затронутых
-    // элементов уже есть фирменный #e2820a как fallback.
-    if (window.FoxFireBridge) window.FoxFireBridge.applyHubTheme();
-
     // === Значения по умолчанию — держим в синхронизации с DEFAULTS в
     // index.html и с configSchema в widget.manifest.json. ===
     const DEFAULTS = {
@@ -412,12 +397,7 @@
     // window.parent !== window, и есть кому слать postMessage. Если страница
     // открыта отдельно (например, вручную двойным кликом по файлу, или в
     // старой версии Hub через отдельное окно) — window.parent === window.
-    // Делегировано в foxfirehub-bridge.js (та же проверка, вынесена в общее
-    // место) — с ручным fallback на случай, если файл моста почему-то не
-    // подключился (страницу вручную открыли без него).
-    const isEmbeddedInHub = window.FoxFireBridge
-      ? window.FoxFireBridge.isEmbeddedInHub()
-      : !!(window.parent && window.parent !== window);
+    const isEmbeddedInHub = window.parent && window.parent !== window;
 
     const fields = {};
     Object.keys(DEFAULTS).forEach((key) => {
@@ -492,7 +472,6 @@
     // единственное, что нужно понимать Hub-у, никакого Tauri-события. Формат
     // фиксирован в SYSTEM_WIDGET_STYLE.md, раздел 11.
     function notifyHubEmbedded(cfg) {
-      if (window.FoxFireBridge) return window.FoxFireBridge.saveConfig("unified-chat", cfg);
       if (!isEmbeddedInHub) return false;
       window.parent.postMessage(
         { type: "foxfirehub:settings-saved", widgetId: "unified-chat", config: cfg },

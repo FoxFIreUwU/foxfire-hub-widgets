@@ -34,19 +34,13 @@
     margin: 0;
     padding: 0;
     height: 100%;
-    background: transparent; /* прозрачный фон снаружи — источник "Браузер" в OBS покажет только карточку чата */
+    background: transparent !important; /* Прозрачный фон снаружи для OBS */
     font-family: var(--unifiedchat-font);
   }
 
-  /* === Режим "Стример" ===============================================
-     Когда виджет запущен внутри самого FoxFire Hub (кнопка "Запустить"),
-     а не как файл в источнике OBS — показываем стилизованное окно-приложение
-     вместо голого прозрачного оверлея: непрозрачный фон, шапка с названием
-     и статусом подключения к площадкам. Переключается классом на <body>,
-     см. resolveViewMode() в скрипте ниже. Палитра — фирменная FoxFire
-     (SYSTEM_MAIN_APP.md): #0d0c0f фон, #1a1512 карточки, #e2820a акцент. */
+  /* === Режим "Стример" === */
   body.unifiedchat-mode-streamer {
-    background: radial-gradient(circle at 15% -10%, rgba(226, 130, 10, 0.10), transparent 45%), #0d0c0f;
+    background: radial-gradient(circle at 15% -10%, rgba(226, 130, 10, 0.10), transparent 45%), #0d0c0f !important;
   }
 
   .unifiedchat-header {
@@ -98,9 +92,8 @@
     flex-direction: column;
     padding: 10px;
     zoom: var(--unifiedchat-scale);
+    background: transparent;
   }
-  /* В режиме стримера окну удобнее чуть больше "воздуха" по бокам — это чисто
-     стилистическая разница, ширина/высота всё равно берутся из окна/OBS. */
   body.unifiedchat-mode-streamer .unifiedchat-root { padding: 14px; }
 
   .unifiedchat-feed {
@@ -112,11 +105,6 @@
     gap: var(--unifiedchat-gap);
     overflow: hidden auto;
     padding: 4px;
-    /* Раньше цвет/прозрачность/размытие "карточки" ошибочно вешались СЮДА —
-       на весь контейнер ленты, поэтому все сообщения сливались в один общий
-       блок вместо отдельных плавающих карточек одна под другой (как в
-       референсе интерфейса). Сама лента теперь всегда прозрачная — фон
-       живёт на каждом сообщении отдельно, см. .unifiedchat-msg ниже. */
     background: transparent;
   }
 
@@ -132,30 +120,21 @@
     padding: 12px;
   }
 
-  /* === Карточка одного сообщения ======================================
-     Это и есть "карточка", которую настраивает раздел "Фон карточки" в
-     settings.html: цвет/прозрачность/размытие/скругление — каждое
-     сообщение своим отдельным плавающим блоком, не общий контейнер.
-     Ширина — по содержимому (не на всю ширину ленты), сверху лёгкая тень,
-     чтобы карточка визуально "лежала" поверх трансляции. Внутри — две
-     строки: шапка (иконка площадки + бейджи + имя) и сам текст ниже. */
+  /* === Карточка одного сообщения === */
   .unifiedchat-msg {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
-    max-width: 92%;
-    width: fit-content;
-    padding: 6px 10px;
-    border-radius: var(--unifiedchat-radius);
-    background: rgba(var(--unifiedchat-bg-color), var(--unifiedchat-bg-alpha));
-    backdrop-filter: blur(var(--unifiedchat-bg-blur));
-    -webkit-backdrop-filter: blur(var(--unifiedchat-bg-blur));
-    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
-    word-break: break-word;
-  }
-  /* enableBackground=false — убирает фон/тень карточки, оставляя только
-     сами сообщения (класс вешается на ленту, см. applyVisualConfig). */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  max-width: 92%;
+  width: fit-content;
+  padding: 6px 10px;
+  border-radius: var(--unifiedchat-radius);
+  background: rgba(var(--unifiedchat-bg-color), var(--unifiedchat-bg-alpha));
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
+  word-break: break-word;
+}
+
   .unifiedchat-feed.unifiedchat-no-bg .unifiedchat-msg {
     background: transparent;
     backdrop-filter: none;
@@ -163,7 +142,7 @@
     box-shadow: none;
   }
 
-  /* Шапка сообщения: иконка площадки + бейджи + имя, всегда в одну строку. */
+  /* Шапка сообщения */
   .unifiedchat-msg-head {
     display: flex;
     align-items: center;
@@ -171,9 +150,7 @@
     max-width: 100%;
   }
 
-  /* === Анимации появления сообщения — управляются классом на корне ленты,
-     см. applyConfig() → animationStyle. Заданы все варианты сразу, включается
-     только один через .unifiedchat-anim-* на .unifiedchat-feed. === */
+  /* === Анимации появления сообщения === */
   .unifiedchat-anim-fade .unifiedchat-msg { animation: unifiedchat-in-fade 0.2s ease-out; }
   .unifiedchat-anim-up .unifiedchat-msg { animation: unifiedchat-in-up 0.22s cubic-bezier(.2,.8,.3,1); }
   .unifiedchat-anim-left .unifiedchat-msg { animation: unifiedchat-in-left 0.22s cubic-bezier(.2,.8,.3,1); }
@@ -197,11 +174,6 @@
     box-shadow: none;
   }
 
-  /* Раньше значок площадки был "голой" обводкой без заливки (SVG-иконка
-     телевизора stroke-only) — на маленьком размере в реальном чате это
-     читалось как пустой чекбокс. Теперь у него, как и у бейджей роли, есть
-     собственный закрашенный кружок-подложка, чтобы он не терялся и не
-     путался с чекбоксом. */
   .unifiedchat-platform {
     display: inline-flex;
     align-items: center;
@@ -217,11 +189,7 @@
   .unifiedchat-platform svg { width: 0.85em; height: 0.85em; display: block; }
   .unifiedchat-time { font-size: 0.75em; color: #a89a8c; font-variant-numeric: tabular-nums; flex: none; }
 
-  /* === Бейджи ролей — единый формат ===================================
-     Раньше это были голые SVG-иконки вразнобой по размеру. Теперь —
-     одинаковые по форме и размеру "чипы" с мягкой подсветкой цвета роли
-     (площадка не важна: модератор Twitch и модератор YouTube выглядят
-     одинаково), цвет каждой роли настраивается отдельно. */
+  /* === Бейджи ролей === */
   .unifiedchat-badge {
     display: inline-flex;
     align-items: center;
@@ -241,9 +209,6 @@
   .unifiedchat-badge--partner     { background: color-mix(in srgb, var(--unifiedchat-role-partner) 20%, transparent);    color: var(--unifiedchat-role-partner); }
 
   .unifiedchat-author { font-weight: 700; white-space: nowrap; }
-  /* ":" после имени больше не нужен — имя теперь на отдельной строке от
-     текста сообщения (как в референсе интерфейса), сам разделитель прячем,
-     но не удаляем из разметки, чтобы ничего не пришлось трогать в JS. */
   .unifiedchat-sep { display: none; }
 
   .unifiedchat-text {
@@ -254,12 +219,7 @@
     word-spacing: var(--unifiedchat-word-spacing);
     text-shadow: var(--unifiedchat-shadow);
   }
-  /* Системные сообщения (таймауты/баны/очистка чата) остаются одной строкой,
-     без разделения на "шапку" и "текст". */
   .unifiedchat-msg--system .unifiedchat-text { display: inline; }
-  /* Классы регистра/начертания вешаются на саму ленту (.unifiedchat-feed),
-     не на каждое сообщение — так изменения в настройках применяются сразу
-     ко всем уже отрисованным сообщениям, без перерисовки. */
   .unifiedchat-feed.unifiedchat-text--bold .unifiedchat-text { font-weight: 700; }
   .unifiedchat-feed.unifiedchat-text--italic .unifiedchat-text { font-style: italic; }
   .unifiedchat-feed.unifiedchat-text--underline .unifiedchat-text { text-decoration: underline; }
@@ -297,52 +257,35 @@
     <div class="unifiedchat-feed" id="unifiedchat-feed"></div>
   </div>
 
-  <script src="foxfirehub-bridge.js"></script>
   <script>
-    // === SVG-иконки бейджей и площадок ===============================
-    // Свои минималистичные глифы (не логотипы Twitch/YouTube — просто
-    // узнаваемые нейтральные значки), чтобы не тащить растровые файлы и
-    // чтобы их было легко перекрашивать через currentColor.
     const ICONS = {
       twitchPlatform:
         '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 2l-2 4v14h6v2h4l2-2h5l3-3V2H4zm16 12l-2 2h-5l-2 2v-2H7V4h13v10z"/><path d="M10 6h2v5h-2zM15 6h2v5h-2z"/></svg>',
       youtubePlatform:
         '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="5" width="18" height="14" rx="4"/><path d="M10 9l6 3-6 3V9z" fill="#1a1512"/></svg>',
-      crown: // стример / владелец канала
+      crown:
         '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 8l4 3 5-6 5 6 4-3-2 10H5L3 8z"/></svg>',
-      shield: // модератор
+      shield:
         '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l7 3v6c0 5-3.4 8.5-7 11-3.6-2.5-7-6-7-11V5l7-3z"/></svg>',
-      gem: // VIP
+      gem:
         '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 9l4-6h10l4 6-9 12L3 9z"/></svg>',
-      star: // подписчик / спонсор
+      star:
         '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3 6.5 7 .9-5.2 4.9 1.4 7-6.2-3.6-6.2 3.6 1.4-7L2 9.4l7-.9L12 2z"/></svg>',
-      trophy: // фаундер
+      trophy:
         '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4h10v3a5 5 0 0 1-5 5 5 5 0 0 1-5-5V4z"/><path d="M7 5H4a3 3 0 0 0 3 4M17 5h3a3 3 0 0 1-3 4"/><path d="M12 12v4M8 20h8l-1-3H9l-1 3z"/></svg>',
-      check: // партнёр / подтверждён
+      check:
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="9" fill="currentColor" stroke="none"/><path d="M8 12.5l2.6 2.6L16 9.5" stroke="#1a1512"/></svg>',
-      wrench: // staff / admin
+      wrench:
         '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2-2 2.6-2.6z"/></svg>',
     };
     function iconSpan(cls, key, title) {
       return `<span class="${cls}" title="${escapeHtml(title)}">${ICONS[key] || ""}</span>`;
     }
-    // Бейдж роли — единый "чип" (см. CSS .unifiedchat-badge--*), цвет берётся
-    // из роли (не из площадки), чтобы модератор Twitch и модератор YouTube
-    // выглядели одинаково. role может отсутствовать — тогда рисуем нейтрально.
     function badgeSpan(badge) {
       const roleClass = badge.role ? ` unifiedchat-badge--${badge.role}` : "";
       return `<span class="unifiedchat-badge${roleClass}" title="${escapeHtml(badge.label || "")}">${ICONS[badge.icon] || ""}</span>`;
     }
 
-    // === Настройки виджета ============================================
-    // Базовые значения приходят как query-параметры index.html при первом
-    // открытии (SYSTEM_WIDGET_STYLE.md, раздел 8б) — так виджет продолжает
-    // работать как обычный "Браузер"-источник в OBS. Дополнительно виджет
-    // слушает postMessage с {type:"unifiedchat:config", config} — это нужно
-    // окну настроек (settings.html) для живого предпросмотра без
-    // перезагрузки страницы на каждое изменение. Если виджет открыт не
-    // изнутри settings.html, postMessage просто никогда не придёт и всё
-    // работает как раньше, через query-параметры.
     const DEFAULTS = {
       twitchChannel: "",
       youtubeChannel: "",
@@ -365,17 +308,10 @@
       enableThirdPartyEmotes: true,
       textColor: "#f4f0ea",
       accentColor: "#e2820a",
-      // Режим окна: "Авто" сам решает по контексту (внутри FoxFire Hub —
-      // стилизованное окно для стримера, как файл в OBS/браузере — обычный
-      // прозрачный оверлей); можно закрепить явно.
       viewMode: "Авто (по контексту)",
-      // Фон карточки: можно убрать совсем, задать свой цвет и размыть его
-      // (эффект "стекла"), в дополнение к прозрачности и скруглению выше.
       enableBackground: true,
       bgColor: "#1a1512",
       bgBlur: 0,
-      // Текст сообщения: начертание, регистр, расстояние между буквами и
-      // словами, тень (набор ровно как в примерах настроек).
       letterSpacing: 0,
       wordSpacing: 0,
       textBold: false,
@@ -386,8 +322,6 @@
       shadowOffsetX: 0,
       shadowOffsetY: 1,
       shadowBlur: 2,
-      // Цвета ролей/бейджей — по умолчанию модераторы синие, спонсоры/подписчики
-      // оранжевые (цвет площадки-акцент), но всё это можно перекрасить.
       badgeColorBroadcaster: "#ffb703",
       badgeColorModerator: "#3ea6ff",
       badgeColorVip: "#c084fc",
@@ -421,10 +355,6 @@
     let config = configFromParams();
     const feed = document.getElementById("unifiedchat-feed");
 
-    // === Статус подключения в шапке режима "Стример" =====================
-    // Просто цветная точка + подпись: серая — не настроено/не подключено,
-    // жёлтая — идёт попытка подключения, зелёная — подключено, красная —
-    // ошибка. В режиме "Зритель" (OBS) шапка скрыта и это ни на что не влияет.
     const STATUS_DOT_CLASS = {
       idle: "",
       connecting: "unifiedchat-status-dot--connecting",
@@ -447,10 +377,6 @@
     };
     function resolveFontStack(cfg) {
       if (cfg.fontFamily === "Свой шрифт..." && cfg.fontFamilyCustom.trim()) {
-        // Пользовательский шрифт с ПК — обязательно с системным fallback,
-        // на случай если у зрителя (в OBS-источнике на другом ПК) этого
-        // шрифта нет (SYSTEM_WIDGET_STYLE.md — виджет не может ничего
-        // подгрузить, кроме своих файлов).
         return `"${cfg.fontFamilyCustom.trim()}", "Segoe UI", sans-serif`;
       }
       return FONT_STACKS[cfg.fontFamily] || FONT_STACKS["Системный (по умолчанию)"];
@@ -463,14 +389,6 @@
       "Без анимации": "unifiedchat-anim-none",
     };
 
-    // Применяет ту часть конфига, которая не требует переподключения к
-    // чатам (визуальные настройки) — вызывается и при старте, и на каждое
-    // сообщение postMessage из окна настроек, чтобы предпросмотр обновлялся
-    // мгновенно, без перезапуска соединений.
-    // Внутри FoxFire Hub (кнопка "Запустить") доступен window.__TAURI__ — по
-    // этому же признаку виджет ниже выбирает бесплатный способ поиска
-    // YouTube-трансляции. Используем его и для "Авто"-режима окна: как файл в
-    // OBS/браузере (без Hub рядом) __TAURI__ нет → обычный прозрачный оверлей.
     function resolveViewMode(cfg) {
       if (cfg.viewMode === "Стример (окно)") return "streamer";
       if (cfg.viewMode === "Зритель (OBS)") return "viewer";
@@ -503,7 +421,6 @@
           : "none"
       );
 
-      // Роли/бейджи: единый формат чипа задан в CSS, здесь только цвета.
       root.setProperty("--unifiedchat-role-broadcaster", cfg.badgeColorBroadcaster);
       root.setProperty("--unifiedchat-role-moderator", cfg.badgeColorModerator);
       root.setProperty("--unifiedchat-role-vip", cfg.badgeColorVip);
@@ -511,8 +428,6 @@
       root.setProperty("--unifiedchat-role-staff", cfg.badgeColorStaff);
       root.setProperty("--unifiedchat-role-partner", cfg.badgeColorPartner);
 
-      // Фон карточки: можно полностью убрать, задать свой цвет и размыть
-      // (backdrop-filter) в дополнение к обычной прозрачности.
       root.setProperty("--unifiedchat-bg-color", hexToRgbList(cfg.bgColor));
       root.setProperty("--unifiedchat-bg-alpha", String(Math.min(100, Math.max(0, cfg.bgOpacity)) / 100));
       root.setProperty("--unifiedchat-bg-blur", Math.max(0, cfg.bgBlur) + "px");
@@ -520,15 +435,10 @@
 
       document.body.style.fontSize = cfg.fontSize + "px";
 
-      // Окно: "стример" (внутри Hub, непрозрачный стилизованный интерфейс) или
-      // "зритель" (прозрачный оверлей для OBS/трансляции) — см. resolveViewMode().
       const mode = resolveViewMode(cfg);
       document.body.classList.toggle("unifiedchat-mode-streamer", mode === "streamer");
       document.body.classList.toggle("unifiedchat-mode-viewer", mode === "viewer");
 
-      // Начертание текста сообщений: жирный/курсив/подчёркнутый/регистр —
-      // применяются классами на саму ленту, чтобы не переписывать каждое
-      // уже отрисованное сообщение по отдельности.
       feed.classList.toggle("unifiedchat-text--bold", !!cfg.textBold);
       feed.classList.toggle("unifiedchat-text--italic", !!cfg.textItalic);
       feed.classList.toggle("unifiedchat-text--underline", !!cfg.textUnderline);
@@ -538,9 +448,6 @@
       Object.values(ANIM_CLASS).forEach((c) => feed.classList.remove(c));
       feed.classList.add(ANIM_CLASS[cfg.animationStyle] || ANIM_CLASS["Плавно (fade)"]);
 
-      // "Новые снизу" — сообщения прижаты к низу ленты (обычное поведение
-      // чата), "Новые сверху" — к верху, иначе при малом числе сообщений
-      // лента выглядела бы неестественно вжатой в один угол.
       feed.style.justifyContent = cfg.direction === "Новые сверху" ? "flex-start" : "flex-end";
     }
 
@@ -554,7 +461,6 @@
 
     function pad(n) { return String(n).padStart(2, "0"); }
 
-    // === Отрисовка объединённой ленты ===
     function addMessage(msg) {
       const emptyNotice = feed.querySelector(".unifiedchat-empty");
       if (emptyNotice) emptyNotice.remove();
@@ -582,9 +488,6 @@
         head += `<span class="unifiedchat-sep">:</span>`;
       }
 
-      // Системные сообщения (таймаут/бан/очистка чата) — одна строка, без
-      // отдельной "шапки". Обычные сообщения — шапка (иконка/бейджи/имя)
-      // сверху, сам текст отдельной строкой ниже, как в референсе интерфейса.
       let inner;
       if (msg.system) {
         inner = `<span class="unifiedchat-text">${msg.html}</span>`;
@@ -618,14 +521,7 @@
       }
     }
 
-    // ================= СТОРОННИЕ ЭМОУТЫ TWITCH (7TV + BetterTTV, глобальные) =================
-    // Только глобальные наборы: чтобы получить наборы конкретного канала,
-    // нужен числовой Twitch ID канала, а его официально можно узнать только
-    // через Twitch Helix API с client-id/токеном — это уже не "анонимное"
-    // подключение, поэтому в MVP такого не делаем (см. README, раздел
-    // "Известные ограничения"). Глобальные наборы не требуют авторизации и
-    // подходят под тот же принцип анонимного чтения, что и сам Twitch-чат.
-    const thirdPartyEmotes = new Map(); // "PogU" -> url
+    const thirdPartyEmotes = new Map();
 
     async function loadThirdPartyEmotesGlobal() {
       try {
@@ -655,8 +551,6 @@
 
     function applyThirdPartyEmotes(html) {
       if (!config.enableThirdPartyEmotes || thirdPartyEmotes.size === 0) return html;
-      // html уже содержит escaped-текст и, возможно, <img> нативных эмоутов
-      // Twitch — режем по пробелам вне тегов, заменяем только "голые" слова.
       return html.replace(/(^|\s)([A-Za-z0-9_]{2,30})(?=\s|$)/g, (whole, prefix, word) => {
         const url = thirdPartyEmotes.get(word);
         if (!url) return whole;
@@ -664,13 +558,6 @@
       });
     }
 
-    // ================= TWITCH (анонимное подключение к IRC по WebSocket) =================
-    // Публичный чат Twitch можно читать без токена/OAuth — достаточно анонимного
-    // логина вида "justinfanNNNNN" (стандартный приём, которым пользуются все
-    // сторонние Twitch-чат-виджеты). Собственный аккаунт стримера не нужен.
-    // У каждого бейджа есть role — она решает ЦВЕТ чипа (см. applyVisualConfig
-    // и CSS .unifiedchat-badge--*), одинаково для Twitch и YouTube, чтобы
-    // "модератор" везде выглядел одинаково независимо от площадки.
     const TWITCH_BADGE_ICONS = {
       broadcaster: { icon: "crown", label: "Стример", role: "broadcaster" },
       moderator: { icon: "shield", label: "Модератор", role: "moderator" },
@@ -698,8 +585,6 @@
         });
         ranges.sort((a, b) => a.s - b.s);
 
-        // Twitch отдаёт позиции по code unit'ам исходной строки — используем
-        // обычную индексацию JS-строки (UTF-16), это совпадает с форматом Twitch.
         let result = "";
         let cursor = 0;
         ranges.forEach((r) => {
@@ -730,11 +615,6 @@
         return;
       }
 
-      // Действия модераторов: CLEARCHAT (таймаут/бан/полная очистка) и
-      // CLEARMSG (удаление одного сообщения). Twitch присылает их только
-      // потому что мы запросили CAP twitch.tv/commands при подключении —
-      // отдельных прав/токена для этого не нужно, это тоже часть анонимного
-      // чтения публичного чата.
       if (config.highlightModActions) {
         const clearChat = line.match(/^@([^ ]+) :[^ ]+ CLEARCHAT #[^ ]+(?: :(.*))?$/);
         if (clearChat) {
@@ -816,34 +696,13 @@
         };
         ws.onerror = () => {
           setStatus("twitch", "error");
-          try { ws.close(); } catch (_) { /* игнорируем */ }
+          try { ws.close(); } catch (_) {}
         };
       }
 
       connect();
       return () => { stopped = true; setStatus("twitch", "idle"); if (twitchSocket) try { twitchSocket.close(); } catch (_) {} };
     }
-
-    // ================= YOUTUBE =================
-    // У YouTube нет публичного анонимного протокола чата уровня Twitch IRC —
-    // единственный официальный способ читать сами СООБЩЕНИЯ live-чата без
-    // своего бэкенда — это YouTube Data API v3 со своим бесплатным API-ключом
-    // (см. README). Но раньше пользователю приходилось вручную копировать
-    // Video ID перед каждым эфиром — это и убираем.
-    //
-    // Способ найти ТЕКУЩУЮ трансляцию по каналу теперь два, по приоритету:
-    //  1. Внутри FoxFire Hub (когда доступен window.__TAURI__) — бесплатный
-    //     способ через Rust-команду resolve_youtube_live_video: она делает
-    //     обычный GET на youtube.com/@channel/live и смотрит, куда был
-    //     редирект — ровно то же самое, что видит человек, кликая "Live" на
-    //     канале. Квоту API это не тратит вообще, так как это не Data API.
-    //  2. Если виджет открыт отдельно (например, как файл в источнике
-    //     "Браузер" в OBS, без FoxFire Hub рядом) — резервный вариант через
-    //     сам Data API (search.list), с редким интервалом опроса, чтобы не
-    //     упереться в дневную квоту ключа (см. README о квоте).
-    // В обоих случаях можно вписать youtubeVideoIdOverride — тогда виджет
-    // не ищет ничего сам и сразу использует указанный Video ID (запасной
-    // вариант на случай, если авто-поиск не сработал).
 
     function ytBadges(author) {
       const list = [];
@@ -885,7 +744,7 @@
             return;
           }
           console.warn("unified-chat: YouTube API вернул ошибку", data.error.message);
-          nextDelay = 30000; // скорее всего квота — не долбим API чаще раза в 30с
+          nextDelay = 30000;
         } else {
           (data.items || []).forEach((item) => {
             const snippet = item.snippet || {};
@@ -911,7 +770,6 @@
       setTimeout(() => pollYoutubeMessages(liveChatId, apiKey, pageToken, onEnded, stoppedRef), nextDelay);
     }
 
-    // --- Способ 1: бесплатный поиск через Rust (только внутри FoxFire Hub) ---
     function hasTauri() {
       return !!(window.__TAURI__ && window.__TAURI__.tauri && window.__TAURI__.tauri.invoke);
     }
@@ -924,7 +782,6 @@
       }
     }
 
-    // --- Способ 2: резервный поиск через официальный Data API (вне Hub) ---
     let cachedChannelId = null;
     let cachedChannelInput = null;
     async function resolveChannelId(channelInput, apiKey) {
@@ -955,7 +812,7 @@
       const res = await fetch(url);
       const data = await res.json();
       if (data.error) {
-        console.warn("unified-chat: резервный поиск трансляции YouTube вернул ошибку (вероятно, квота)", data.error.message);
+        console.warn("unified-chat: резервный поиск трансляции YouTube вернул ошибку", data.error.message);
         return null;
       }
       const item = data.items && data.items[0];
@@ -964,7 +821,7 @@
 
     let youtubeStoppedRef = { stopped: false };
     async function connectYoutube(cfg) {
-      youtubeStoppedRef.stopped = true; // останавливаем предыдущую сессию, если была
+      youtubeStoppedRef.stopped = true;
       const stoppedRef = { stopped: false };
       youtubeStoppedRef = stoppedRef;
 
@@ -991,9 +848,6 @@
         if (stoppedRef.stopped) return;
 
         if (!videoId) {
-          // Трансляции пока нет — если ищем бесплатно через Hub, можно
-          // проверять часто (это не тратит квоту); если через Data API —
-          // редко, чтобы уложиться в дневной лимит ключа.
           setTimeout(loop, usingTauri ? 20000 : 5 * 60 * 1000);
           return;
         }
@@ -1016,9 +870,6 @@
       loop();
     }
 
-    // === Демо-сообщения для предпросмотра (когда обе площадки не заданы) ===
-    // Демо-сообщения показывают сразу все роли/цвета бейджей — удобно, чтобы
-    // проверить свою раскраску в настройках, не дожидаясь реального эфира.
     function showDemoMessages() {
       addMessage({ platform: "twitch", author: "стример", color: "#e2820a", badges: [TWITCH_BADGE_ICONS.broadcaster], html: applyThirdPartyEmotes(escapeHtml("всем привет, погнали стрим!")), ts: Date.now() });
       addMessage({ platform: "youtube", author: "Зритель42", badges: [{ icon: "star", label: "Спонсор канала", role: "subscriber" }], html: escapeHtml("наконец-то на двух площадках сразу видно чат 🔥"), ts: Date.now() });
@@ -1030,9 +881,6 @@
       }
     }
 
-    // Одно случайное тестовое сообщение — используется кнопкой "Тестовое
-    // сообщение" в settings.html, чтобы проверить анимацию появления и стиль,
-    // не открывая настоящий эфир.
     const TEST_MESSAGE_POOL = [
       { platform: "twitch", author: "стример", color: "#e2820a", badges: [TWITCH_BADGE_ICONS.broadcaster], text: "проверяем как это будет выглядеть в реальном чате" },
       { platform: "youtube", author: "ОбычныйЗритель", badges: [], text: "привет из YouTube-чата 👋" },
@@ -1048,8 +896,6 @@
       if (event.data && event.data.type === "unifiedchat:test-message") showRandomTestMessage();
     });
 
-    // === Запуск и применение конфига (общая точка для старта и для
-    // postMessage-обновлений из окна настроек) ===
     let stopTwitch = null;
     function startConnections(cfg, opts) {
       applyVisualConfig(cfg);
@@ -1071,9 +917,6 @@
       connectYoutube(cfg);
     }
 
-    // postMessage от settings.html: живой предпросмотр. connectionKeys —
-    // поля, при изменении которых нужно по-настоящему переподключиться
-    // (а не просто перекрасить), остальные применяются мгновенно.
     const CONNECTION_KEYS = ["twitchChannel", "youtubeChannel", "youtubeApiKey", "youtubeVideoIdOverride"];
     window.addEventListener("message", (event) => {
       const data = event.data;
@@ -1087,35 +930,6 @@
         applyVisualConfig(config);
       }
     });
-
-    // Живое обновление УЖЕ ЗАПУЩЕННОГО окна виджета (кнопка "Запустить"),
-    // когда настройки правят параллельно в другом месте Hub (вкладка
-    // "Загруженное") — без этого окно подхватило бы новые значения только
-    // на следующий перезапуск, потому что query-параметры читаются один раз
-    // при создании окна. Работает через foxfirehub-bridge.js, только внутри
-    // FoxFire Hub — вне его (например, файл вставлен в источник "Браузер" в
-    // OBS) просто ничего не делает, это нормально: OBS-источник и так
-    // пересоздаётся вручную при копировании новой ссылки для OBS.
-    // Важно: подписываемся ТОЛЬКО когда index.html — настоящее верхнеуровневое
-    // окно виджета (isEmbeddedInHub() === false), а не сам себя проверяем через
-    // hasTauri(). settings.html держит свой собственный предпросмотр этого же
-    // index.html во вложенном <iframe> (для демо-режима) — та вложенная копия
-    // ЖИВЁТ внутри Hub и тоже видит window.__TAURI__, но её конфиг уже и так
-    // приходит через postMessage от settings.html (с правильным demo-флагом);
-    // если бы она ЕЩЁ и слушала это Tauri-событие, при правке полей
-    // twitchChannel/youtubeChannel предпросмотр по ошибке пытался бы
-    // взаправду подключиться, даже с включённым чекбоксом "Демо-сообщения".
-    if (window.FoxFireBridge && !window.FoxFireBridge.isEmbeddedInHub()) {
-      window.FoxFireBridge.onLiveConfigUpdate("unified-chat", ({ key, value }) => {
-        const prevValue = config[key];
-        config = { ...config, [key]: value };
-        if (CONNECTION_KEYS.includes(key) && prevValue !== value) {
-          startConnections(config, { demo: false });
-        } else {
-          applyVisualConfig(config);
-        }
-      });
-    }
 
     loadThirdPartyEmotesGlobal().finally(() => {
       startConnections(config, { demo: !config.twitchChannel && !config.youtubeChannel && !config.youtubeVideoIdOverride });

@@ -1,6 +1,6 @@
 {
   "id": "unified-chat",
-  "name": "Общий чат (Twitch + YouTube) V2",
+  "name": "Общий чат (Twitch + YouTube)",
   "author": {
     "name": "FoxFire Hub Team",
     "url": "https://github.com/FoxFireUwU"
@@ -260,8 +260,8 @@
       "version": "2.1.0",
       "releaseDate": "2026-09-28",
       "downloadUrl": "https://github.com/FoxFIreUwU/foxfire-hub-widgets/releases/download/unified-chat-v2.1.0/unified-chat.zip",
-      "status": "warning",
-      "statusMessage": "Даже не пробуйте это запускать"
+      "status": "stable",
+      "statusMessage": ""
     },
     {
       "version": "2.0.0",
