@@ -1,7 +1,7 @@
 [
   {
     "id": "unified-chat",
-    "name": "Общий чат (Twitch + YouTube)",
+    "name": "Общий чат (Twitch + YouTube) V2",
     "author": {
       "name": "FoxFire Hub Team",
       "url": "https://github.com/FoxFireUwU"
@@ -18,7 +18,7 @@
     ],
     "shortDescription": "Склеивает чаты Twitch и YouTube в одну ленту — стильное отдельное окно для стримера и лёгкий оверлей для зрителей.",
     "fullDescription": "Когда стрим идёт одновременно на Twitch и YouTube, сообщения из обоих чатов показываются одной общей лентой, отсортированной по времени — не нужно бегать глазами между двумя окнами.\n\nС версии 2.1.0 у стримера и у зрителей — РАЗНЫЙ интерфейс, не один и тот же виджет: запущенный кнопкой \"Запустить\" внутри самого FoxFire Hub, виджет сам переключается в стилизованное непрозрачное окно с шапкой и индикаторами подключения к Twitch/YouTube — удобно держать открытым вторым монитором. А вставленный ссылкой в источник \"Браузер\" OBS — остаётся лёгким прозрачным оверлеем для зрителей на трансляции. Переключение автоматическое, но при желании можно закрепить любой из двух режимов вручную.\n\nTwitch подключается анонимно (без токена и без входа в аккаунт) — просто впиши логин канала. Для YouTube достаточно один раз указать канал (ссылку, @handle или ID) — внутри FoxFire Hub виджет сам находит текущую трансляцию бесплатно, без ручного копирования Video ID перед каждым эфиром (при запуске как обычный файл в OBS, без FoxFire Hub рядом, доступен резервный способ через официальный YouTube Data API — см. README). Для чтения самих сообщений чата YouTube по-прежнему нужен свой бесплатный API-ключ Google — единственный официальный способ, у YouTube нет анонимного протокола чтения чата, как у Twitch.\n\nОтдельное окно настроек с живым предпросмотром (сразу видно и анимацию, и тестовые сообщения по кнопке) теперь устроено вкладками: шрифт/текст/тень сообщения (жирный, курсив, подчёркнутый, регистр, межбуквенный интервал, настраиваемая тень), фон карточки (можно вообще убрать, задать свой цвет, прозрачность и размытие в стиле \"стекла\"), единые по размеру и форме бейджи ролей со своим цветом на каждую роль (по умолчанию модератор — синий, подписчик/спонсор — акцентный оранжевый), и каталог из нескольких готовых тем в один клик. Поддержаны сторонние Twitch-эмоуты (7TV, BetterTTV), показ действий модераторов (таймауты/удаление сообщений), суперчаты YouTube подсвечиваются акцентным цветом отдельно. Работать может и с одной площадкой — оставь поле второй пустым.",
-    "previewUrl": "https://raw.githubusercontent.com/FoxFIreUwU/foxfire-hub-widgets/main/widgets/unified-chat/screenshots/FoxFire_Hub_sV6OVVoCMx.png",
+    "previewUrl": "https://raw.githubusercontent.com/FoxFIreUwU/foxfire-hub-widgets/main/widgets/unified-chat/screenshots/obs64_gQiouKlFkl.png",
     "configSchema": {
       "twitchChannel": {
         "type": "text",
@@ -258,18 +258,18 @@
     "minAppVersion": "0.1.6",
     "versions": [
       {
+        "version": "2.1.0",
+        "releaseDate": "2026-09-28",
+        "downloadUrl": "https://github.com/FoxFIreUwU/foxfire-hub-widgets/releases/download/unified-chat-v2.1.0/unified-chat.zip",
+        "status": "warning",
+        "statusMessage": "Даже не пробуйте это запускать"
+      },
+      {
         "version": "2.0.0",
         "releaseDate": "2026-09-27",
         "downloadUrl": "https://github.com/FoxFIreUwU/foxfire-hub-widgets/releases/download/unified-chat-v2.0.0/unified-chat.zip",
         "status": "warning",
         "statusMessage": "Устаревшая версия: у стримера открывался тот же прозрачный оверлей, что и у зрителей, бейджи были вразнобой по размеру, фон нельзя было убрать/размыть. Рекомендуем обновиться до 2.1.0."
-      },
-      {
-        "version": "2.1.0",
-        "releaseDate": "2026-09-27",
-        "downloadUrl": "https://github.com/FoxFIreUwU/foxfire-hub-widgets/releases/download/unified-chat-v2.1.0/unified-chat.zip",
-        "status": "warning",
-        "statusMessage": "После каждого изменения заново вставить ссылку в обс!!!"
       },
       {
         "version": "1.0.0",

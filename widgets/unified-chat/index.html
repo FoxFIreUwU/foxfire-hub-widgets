@@ -297,6 +297,7 @@
     <div class="unifiedchat-feed" id="unifiedchat-feed"></div>
   </div>
 
+  <script src="foxfirehub-bridge.js"></script>
   <script>
     // === SVG-иконки бейджей и площадок ===============================
     // Свои минималистичные глифы (не логотипы Twitch/YouTube — просто
@@ -1086,6 +1087,35 @@
         applyVisualConfig(config);
       }
     });
+
+    // Живое обновление УЖЕ ЗАПУЩЕННОГО окна виджета (кнопка "Запустить"),
+    // когда настройки правят параллельно в другом месте Hub (вкладка
+    // "Загруженное") — без этого окно подхватило бы новые значения только
+    // на следующий перезапуск, потому что query-параметры читаются один раз
+    // при создании окна. Работает через foxfirehub-bridge.js, только внутри
+    // FoxFire Hub — вне его (например, файл вставлен в источник "Браузер" в
+    // OBS) просто ничего не делает, это нормально: OBS-источник и так
+    // пересоздаётся вручную при копировании новой ссылки для OBS.
+    // Важно: подписываемся ТОЛЬКО когда index.html — настоящее верхнеуровневое
+    // окно виджета (isEmbeddedInHub() === false), а не сам себя проверяем через
+    // hasTauri(). settings.html держит свой собственный предпросмотр этого же
+    // index.html во вложенном <iframe> (для демо-режима) — та вложенная копия
+    // ЖИВЁТ внутри Hub и тоже видит window.__TAURI__, но её конфиг уже и так
+    // приходит через postMessage от settings.html (с правильным demo-флагом);
+    // если бы она ЕЩЁ и слушала это Tauri-событие, при правке полей
+    // twitchChannel/youtubeChannel предпросмотр по ошибке пытался бы
+    // взаправду подключиться, даже с включённым чекбоксом "Демо-сообщения".
+    if (window.FoxFireBridge && !window.FoxFireBridge.isEmbeddedInHub()) {
+      window.FoxFireBridge.onLiveConfigUpdate("unified-chat", ({ key, value }) => {
+        const prevValue = config[key];
+        config = { ...config, [key]: value };
+        if (CONNECTION_KEYS.includes(key) && prevValue !== value) {
+          startConnections(config, { demo: false });
+        } else {
+          applyVisualConfig(config);
+        }
+      });
+    }
 
     loadThirdPartyEmotesGlobal().finally(() => {
       startConnections(config, { demo: !config.twitchChannel && !config.youtubeChannel && !config.youtubeVideoIdOverride });
