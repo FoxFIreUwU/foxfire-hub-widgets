@@ -107,23 +107,17 @@
     flex: 1;
     display: flex;
     flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-end;
     gap: var(--unifiedchat-gap);
-    overflow: hidden;
-    padding: 10px;
-    border-radius: var(--unifiedchat-radius);
-    /* Цвет/прозрачность/размытие фона карточки — все три настраиваются
-       (раздел "Фон" в settings.html); enableBackground может убрать фон
-       полностью, оставив только сами сообщения. */
-    background: rgba(var(--unifiedchat-bg-color), var(--unifiedchat-bg-alpha));
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    backdrop-filter: blur(var(--unifiedchat-bg-blur));
-    -webkit-backdrop-filter: blur(var(--unifiedchat-bg-blur));
-  }
-  .unifiedchat-feed.unifiedchat-no-bg {
+    overflow: hidden auto;
+    padding: 4px;
+    /* Раньше цвет/прозрачность/размытие "карточки" ошибочно вешались СЮДА —
+       на весь контейнер ленты, поэтому все сообщения сливались в один общий
+       блок вместо отдельных плавающих карточек одна под другой (как в
+       референсе интерфейса). Сама лента теперь всегда прозрачная — фон
+       живёт на каждом сообщении отдельно, см. .unifiedchat-msg ниже. */
     background: transparent;
-    border-color: transparent;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 
   .unifiedchat-feed::-webkit-scrollbar { width: 6px; }
@@ -138,15 +132,43 @@
     padding: 12px;
   }
 
+  /* === Карточка одного сообщения ======================================
+     Это и есть "карточка", которую настраивает раздел "Фон карточки" в
+     settings.html: цвет/прозрачность/размытие/скругление — каждое
+     сообщение своим отдельным плавающим блоком, не общий контейнер.
+     Ширина — по содержимому (не на всю ширину ленты), сверху лёгкая тень,
+     чтобы карточка визуально "лежала" поверх трансляции. Внутри — две
+     строки: шапка (иконка площадки + бейджи + имя) и сам текст ниже. */
   .unifiedchat-msg {
     display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 6px;
-    padding: 4px 8px;
-    border-radius: calc(var(--unifiedchat-radius) * 0.6);
-    background: rgba(255, 255, 255, 0.02);
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    max-width: 92%;
+    width: fit-content;
+    padding: 6px 10px;
+    border-radius: var(--unifiedchat-radius);
+    background: rgba(var(--unifiedchat-bg-color), var(--unifiedchat-bg-alpha));
+    backdrop-filter: blur(var(--unifiedchat-bg-blur));
+    -webkit-backdrop-filter: blur(var(--unifiedchat-bg-blur));
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
     word-break: break-word;
+  }
+  /* enableBackground=false — убирает фон/тень карточки, оставляя только
+     сами сообщения (класс вешается на ленту, см. applyVisualConfig). */
+  .unifiedchat-feed.unifiedchat-no-bg .unifiedchat-msg {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+  }
+
+  /* Шапка сообщения: иконка площадки + бейджи + имя, всегда в одну строку. */
+  .unifiedchat-msg-head {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 100%;
   }
 
   /* === Анимации появления сообщения — управляются классом на корне ленты,
@@ -163,20 +185,37 @@
 
   .unifiedchat-msg--super {
     border-left: 3px solid var(--unifiedchat-accent);
-    background: color-mix(in srgb, var(--unifiedchat-accent) 12%, transparent);
-    box-shadow: 0 0 14px color-mix(in srgb, var(--unifiedchat-accent) 25%, transparent);
+    background: color-mix(in srgb, var(--unifiedchat-accent) 22%, rgba(var(--unifiedchat-bg-color), var(--unifiedchat-bg-alpha)));
+    box-shadow: 0 0 14px color-mix(in srgb, var(--unifiedchat-accent) 35%, transparent);
   }
 
   .unifiedchat-msg--system {
-    opacity: 0.75;
+    opacity: 0.8;
     font-style: italic;
     font-size: 0.9em;
-    background: rgba(255, 255, 255, 0.015);
+    background: rgba(0, 0, 0, 0.35);
+    box-shadow: none;
   }
 
-  .unifiedchat-platform { display: inline-flex; align-items: center; line-height: 1; color: #a89a8c; }
-  .unifiedchat-platform svg { width: 1em; height: 1em; display: block; }
-  .unifiedchat-time { font-size: 0.75em; color: #a89a8c; font-variant-numeric: tabular-nums; }
+  /* Раньше значок площадки был "голой" обводкой без заливки (SVG-иконка
+     телевизора stroke-only) — на маленьком размере в реальном чате это
+     читалось как пустой чекбокс. Теперь у него, как и у бейджей роли, есть
+     собственный закрашенный кружок-подложка, чтобы он не терялся и не
+     путался с чекбоксом. */
+  .unifiedchat-platform {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 1.5em;
+    height: 1.5em;
+    line-height: 1;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.12);
+    color: #f4f0ea;
+  }
+  .unifiedchat-platform svg { width: 0.85em; height: 0.85em; display: block; }
+  .unifiedchat-time { font-size: 0.75em; color: #a89a8c; font-variant-numeric: tabular-nums; flex: none; }
 
   /* === Бейджи ролей — единый формат ===================================
      Раньше это были голые SVG-иконки вразнобой по размеру. Теперь —
@@ -188,12 +227,12 @@
     align-items: center;
     justify-content: center;
     line-height: 1;
-    width: 1.6em;
-    height: 1.6em;
-    border-radius: 7px;
+    width: 1.5em;
+    height: 1.5em;
+    border-radius: 50%;
     flex: none;
   }
-  .unifiedchat-badge svg { width: 0.95em; height: 0.95em; display: block; }
+  .unifiedchat-badge svg { width: 0.9em; height: 0.9em; display: block; }
   .unifiedchat-badge--broadcaster { background: color-mix(in srgb, var(--unifiedchat-role-broadcaster) 20%, transparent); color: var(--unifiedchat-role-broadcaster); }
   .unifiedchat-badge--moderator   { background: color-mix(in srgb, var(--unifiedchat-role-moderator) 20%, transparent);   color: var(--unifiedchat-role-moderator); }
   .unifiedchat-badge--vip         { background: color-mix(in srgb, var(--unifiedchat-role-vip) 20%, transparent);        color: var(--unifiedchat-role-vip); }
@@ -201,15 +240,23 @@
   .unifiedchat-badge--staff       { background: color-mix(in srgb, var(--unifiedchat-role-staff) 20%, transparent);      color: var(--unifiedchat-role-staff); }
   .unifiedchat-badge--partner     { background: color-mix(in srgb, var(--unifiedchat-role-partner) 20%, transparent);    color: var(--unifiedchat-role-partner); }
 
-  .unifiedchat-author { font-weight: 700; }
-  .unifiedchat-sep { color: #a89a8c; }
+  .unifiedchat-author { font-weight: 700; white-space: nowrap; }
+  /* ":" после имени больше не нужен — имя теперь на отдельной строке от
+     текста сообщения (как в референсе интерфейса), сам разделитель прячем,
+     но не удаляем из разметки, чтобы ничего не пришлось трогать в JS. */
+  .unifiedchat-sep { display: none; }
 
   .unifiedchat-text {
+    display: block;
+    width: 100%;
     color: var(--unifiedchat-text);
     letter-spacing: var(--unifiedchat-letter-spacing);
     word-spacing: var(--unifiedchat-word-spacing);
     text-shadow: var(--unifiedchat-shadow);
   }
+  /* Системные сообщения (таймауты/баны/очистка чата) остаются одной строкой,
+     без разделения на "шапку" и "текст". */
+  .unifiedchat-msg--system .unifiedchat-text { display: inline; }
   /* Классы регистра/начертания вешаются на саму ленту (.unifiedchat-feed),
      не на каждое сообщение — так изменения в настройках применяются сразу
      ко всем уже отрисованным сообщениям, без перерисовки. */
@@ -225,7 +272,9 @@
   }
 
   .unifiedchat-super-amount {
-    margin-left: auto;
+    display: block;
+    align-self: flex-end;
+    margin-top: 2px;
     font-weight: 700;
     color: var(--unifiedchat-accent);
     font-size: 0.85em;
@@ -255,9 +304,9 @@
     // чтобы их было легко перекрашивать через currentColor.
     const ICONS = {
       twitchPlatform:
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="14" rx="3"/><path d="M9 18v2M15 18v2"/></svg>',
+        '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 2l-2 4v14h6v2h4l2-2h5l3-3V2H4zm16 12l-2 2h-5l-2 2v-2H7V4h13v10z"/><path d="M10 6h2v5h-2zM15 6h2v5h-2z"/></svg>',
       youtubePlatform:
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="4"/><path d="M10 9l6 3-6 3V9z" fill="currentColor" stroke="none"/></svg>',
+        '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="5" width="18" height="14" rx="4"/><path d="M10 9l6 3-6 3V9z" fill="#1a1512"/></svg>',
       crown: // стример / владелец канала
         '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 8l4 3 5-6 5 6 4-3-2 10H5L3 8z"/></svg>',
       shield: // модератор
@@ -487,6 +536,11 @@
 
       Object.values(ANIM_CLASS).forEach((c) => feed.classList.remove(c));
       feed.classList.add(ANIM_CLASS[cfg.animationStyle] || ANIM_CLASS["Плавно (fade)"]);
+
+      // "Новые снизу" — сообщения прижаты к низу ленты (обычное поведение
+      // чата), "Новые сверху" — к верху, иначе при малом числе сообщений
+      // лента выглядела бы неестественно вжатой в один угол.
+      feed.style.justifyContent = cfg.direction === "Новые сверху" ? "flex-start" : "flex-end";
     }
 
     function escapeHtml(str) {
@@ -510,25 +564,34 @@
         (msg.superchat ? " unifiedchat-msg--super" : "") +
         (msg.system ? " unifiedchat-msg--system" : "");
 
-      let inner = "";
+      let head = "";
       if (config.showPlatformIcons && !msg.system) {
-        inner += iconSpan("unifiedchat-platform", msg.platform === "twitch" ? "twitchPlatform" : "youtubePlatform", msg.platform === "twitch" ? "Twitch" : "YouTube");
+        head += iconSpan("unifiedchat-platform", msg.platform === "twitch" ? "twitchPlatform" : "youtubePlatform", msg.platform === "twitch" ? "Twitch" : "YouTube");
       }
       if (config.showTimestamps) {
         const d = new Date(msg.ts);
-        inner += `<span class="unifiedchat-time">${pad(d.getHours())}:${pad(d.getMinutes())}</span>`;
+        head += `<span class="unifiedchat-time">${pad(d.getHours())}:${pad(d.getMinutes())}</span>`;
       }
       if (config.showBadges && msg.badges && msg.badges.length) {
-        inner += msg.badges.map((b) => badgeSpan(b)).join("");
+        head += msg.badges.map((b) => badgeSpan(b)).join("");
       }
       if (!msg.system) {
         const authorColor = msg.color || (msg.platform === "twitch" ? "#c084fc" : "#ff8080");
-        inner += `<span class="unifiedchat-author" style="color:${authorColor}">${escapeHtml(msg.author)}</span>`;
-        inner += `<span class="unifiedchat-sep">:</span>`;
+        head += `<span class="unifiedchat-author" style="color:${authorColor}">${escapeHtml(msg.author)}</span>`;
+        head += `<span class="unifiedchat-sep">:</span>`;
       }
-      inner += `<span class="unifiedchat-text">${msg.html}</span>`;
-      if (msg.superchat) {
-        inner += `<span class="unifiedchat-super-amount">${escapeHtml(msg.superchat)}</span>`;
+
+      // Системные сообщения (таймаут/бан/очистка чата) — одна строка, без
+      // отдельной "шапки". Обычные сообщения — шапка (иконка/бейджи/имя)
+      // сверху, сам текст отдельной строкой ниже, как в референсе интерфейса.
+      let inner;
+      if (msg.system) {
+        inner = `<span class="unifiedchat-text">${msg.html}</span>`;
+      } else {
+        inner = `<div class="unifiedchat-msg-head">${head}</div><span class="unifiedchat-text">${msg.html}</span>`;
+        if (msg.superchat) {
+          inner += `<span class="unifiedchat-super-amount">${escapeHtml(msg.superchat)}</span>`;
+        }
       }
       el.innerHTML = inner;
 
