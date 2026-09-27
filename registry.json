@@ -162,50 +162,5 @@
         "statusMessage": "Устаревшая версия: Video ID YouTube нужно было вводить вручную на каждый эфир. Рекомендуем обновиться до 2.0.0."
       }
     ]
-  },
-  {
-    "id": "stream-timer",
-    "name": "Таймер стрима",
-    "author": {
-      "name": "FoxFire Hub Team",
-      "url": "https://github.com/FoxFireUwU"
-    },
-    "rating": 0,
-    "tags": [
-      "OBS",
-      "Windows",
-      "Mac",
-      "Linux"
-    ],
-    "shortDescription": "Счётчик времени с начала стрима — просто добавь как источник \"Браузер\" в OBS.",
-    "fullDescription": "Пробный виджет для проверки каталога FoxFire Hub. Показывает время, прошедшее с момента открытия страницы, крупными цифрами по центру. Цвет текста и размер шрифта настраиваются, формат времени можно переключить между \"чч:мм:сс\" и \"мм:сс\". Работает полностью локально, без интернета. Известное ограничение: при перезагрузке страницы источника в OBS таймер сбрасывается на ноль.",
-    "configSchema": {
-      "textColor": {
-        "type": "color",
-        "label": "Цвет текста",
-        "default": "#e2820a"
-      },
-      "fontSize": {
-        "type": "number",
-        "label": "Размер шрифта (px)",
-        "default": 64
-      },
-      "longFormat": {
-        "type": "boolean",
-        "label": "Формат чч:мм:сс (вместо мм:сс)",
-        "default": true
-      }
-    },
-    "minAppVersion": "0.1.0-alpha.1",
-    "versions": [
-      {
-        "version": "1.0.0",
-        "releaseDate": "2026-09-25",
-        "downloadUrl": "https://github.com/FoxFireUwU/foxfire-hub-widgets/releases/download/stream-timer-v1.0.0/stream-timer.zip",
-        "status": "unavailable",
-        "statusMessage": "Недоступно, работаем с этим"
-      }
-    ],
-    "previewUrl": "https://raw.githubusercontent.com/FoxFIreUwU/foxfire-hub-widgets/main/widgets/stream-timer/screenshots/Gemini_Generated_Image_sjqkb5sjqkb5sjqk.jpeg"
   }
 ]
