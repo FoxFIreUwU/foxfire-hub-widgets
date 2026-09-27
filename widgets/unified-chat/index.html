@@ -14,6 +14,20 @@
     --unifiedchat-radius: 16px;
     --unifiedchat-gap: 6px;
     --unifiedchat-font: "Segoe UI", "Inter", -apple-system, sans-serif;
+    --unifiedchat-letter-spacing: 0px;
+    --unifiedchat-word-spacing: 0px;
+    --unifiedchat-bg-color: 26, 21, 18; /* rgb-компоненты фона карточки, без alpha */
+    --unifiedchat-bg-alpha: 0.55;
+    --unifiedchat-bg-blur: 0px;
+    --unifiedchat-shadow: none;
+    /* Цвета бейджей по ролям — зависят от площадки/темы, пользователь может
+       переопределить каждый в настройках (раздел "Роли и бейджи"). */
+    --unifiedchat-role-broadcaster: #ffb703;
+    --unifiedchat-role-moderator: #3ea6ff;
+    --unifiedchat-role-vip: #c084fc;
+    --unifiedchat-role-subscriber: #e2820a;
+    --unifiedchat-role-staff: #ef4444;
+    --unifiedchat-role-partner: #22c55e;
   }
 
   html, body {
@@ -24,6 +38,58 @@
     font-family: var(--unifiedchat-font);
   }
 
+  /* === Режим "Стример" ===============================================
+     Когда виджет запущен внутри самого FoxFire Hub (кнопка "Запустить"),
+     а не как файл в источнике OBS — показываем стилизованное окно-приложение
+     вместо голого прозрачного оверлея: непрозрачный фон, шапка с названием
+     и статусом подключения к площадкам. Переключается классом на <body>,
+     см. resolveViewMode() в скрипте ниже. Палитра — фирменная FoxFire
+     (SYSTEM_MAIN_APP.md): #0d0c0f фон, #1a1512 карточки, #e2820a акцент. */
+  body.unifiedchat-mode-streamer {
+    background: radial-gradient(circle at 15% -10%, rgba(226, 130, 10, 0.10), transparent 45%), #0d0c0f;
+  }
+
+  .unifiedchat-header {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 14px;
+    margin-bottom: 8px;
+    border-radius: 12px;
+    background: rgba(26, 21, 18, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
+  }
+  body.unifiedchat-mode-streamer .unifiedchat-header { display: flex; }
+  .unifiedchat-header-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #f4f0ea;
+  }
+  .unifiedchat-header-title .unifiedchat-flame { color: var(--unifiedchat-accent); }
+  .unifiedchat-header-status { display: flex; align-items: center; gap: 12px; }
+  .unifiedchat-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    color: #a89a8c;
+  }
+  .unifiedchat-status-pill svg { width: 14px; height: 14px; }
+  .unifiedchat-status-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #5a5148;
+    box-shadow: 0 0 0 rgba(0,0,0,0);
+    transition: background 0.2s, box-shadow 0.2s;
+  }
+  .unifiedchat-status-dot--connected { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+  .unifiedchat-status-dot--connecting { background: #eab308; box-shadow: 0 0 6px #eab308; }
+  .unifiedchat-status-dot--error { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
+
   .unifiedchat-root {
     box-sizing: border-box;
     width: 100%;
@@ -33,6 +99,9 @@
     padding: 10px;
     zoom: var(--unifiedchat-scale);
   }
+  /* В режиме стримера окну удобнее чуть больше "воздуха" по бокам — это чисто
+     стилистическая разница, ширина/высота всё равно берутся из окна/OBS. */
+  body.unifiedchat-mode-streamer .unifiedchat-root { padding: 14px; }
 
   .unifiedchat-feed {
     flex: 1;
@@ -42,9 +111,19 @@
     overflow: hidden;
     padding: 10px;
     border-radius: var(--unifiedchat-radius);
-    /* тёплый почти чёрный фон карточки FoxFire (#1a1512), прозрачность через bgOpacity */
-    background: rgba(26, 21, 18, 0.55);
+    /* Цвет/прозрачность/размытие фона карточки — все три настраиваются
+       (раздел "Фон" в settings.html); enableBackground может убрать фон
+       полностью, оставив только сами сообщения. */
+    background: rgba(var(--unifiedchat-bg-color), var(--unifiedchat-bg-alpha));
     border: 1px solid rgba(255, 255, 255, 0.06);
+    backdrop-filter: blur(var(--unifiedchat-bg-blur));
+    -webkit-backdrop-filter: blur(var(--unifiedchat-bg-blur));
+  }
+  .unifiedchat-feed.unifiedchat-no-bg {
+    background: transparent;
+    border-color: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
   .unifiedchat-feed::-webkit-scrollbar { width: 6px; }
@@ -95,16 +174,50 @@
     background: rgba(255, 255, 255, 0.015);
   }
 
-  .unifiedchat-platform { display: inline-flex; align-items: center; line-height: 1; }
+  .unifiedchat-platform { display: inline-flex; align-items: center; line-height: 1; color: #a89a8c; }
   .unifiedchat-platform svg { width: 1em; height: 1em; display: block; }
   .unifiedchat-time { font-size: 0.75em; color: #a89a8c; font-variant-numeric: tabular-nums; }
-  .unifiedchat-badge { display: inline-flex; align-items: center; line-height: 1; }
+
+  /* === Бейджи ролей — единый формат ===================================
+     Раньше это были голые SVG-иконки вразнобой по размеру. Теперь —
+     одинаковые по форме и размеру "чипы" с мягкой подсветкой цвета роли
+     (площадка не важна: модератор Twitch и модератор YouTube выглядят
+     одинаково), цвет каждой роли настраивается отдельно. */
+  .unifiedchat-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    width: 1.6em;
+    height: 1.6em;
+    border-radius: 7px;
+    flex: none;
+  }
   .unifiedchat-badge svg { width: 0.95em; height: 0.95em; display: block; }
+  .unifiedchat-badge--broadcaster { background: color-mix(in srgb, var(--unifiedchat-role-broadcaster) 20%, transparent); color: var(--unifiedchat-role-broadcaster); }
+  .unifiedchat-badge--moderator   { background: color-mix(in srgb, var(--unifiedchat-role-moderator) 20%, transparent);   color: var(--unifiedchat-role-moderator); }
+  .unifiedchat-badge--vip         { background: color-mix(in srgb, var(--unifiedchat-role-vip) 20%, transparent);        color: var(--unifiedchat-role-vip); }
+  .unifiedchat-badge--subscriber  { background: color-mix(in srgb, var(--unifiedchat-role-subscriber) 20%, transparent); color: var(--unifiedchat-role-subscriber); }
+  .unifiedchat-badge--staff       { background: color-mix(in srgb, var(--unifiedchat-role-staff) 20%, transparent);      color: var(--unifiedchat-role-staff); }
+  .unifiedchat-badge--partner     { background: color-mix(in srgb, var(--unifiedchat-role-partner) 20%, transparent);    color: var(--unifiedchat-role-partner); }
 
   .unifiedchat-author { font-weight: 700; }
   .unifiedchat-sep { color: #a89a8c; }
 
-  .unifiedchat-text { color: var(--unifiedchat-text); }
+  .unifiedchat-text {
+    color: var(--unifiedchat-text);
+    letter-spacing: var(--unifiedchat-letter-spacing);
+    word-spacing: var(--unifiedchat-word-spacing);
+    text-shadow: var(--unifiedchat-shadow);
+  }
+  /* Классы регистра/начертания вешаются на саму ленту (.unifiedchat-feed),
+     не на каждое сообщение — так изменения в настройках применяются сразу
+     ко всем уже отрисованным сообщениям, без перерисовки. */
+  .unifiedchat-feed.unifiedchat-text--bold .unifiedchat-text { font-weight: 700; }
+  .unifiedchat-feed.unifiedchat-text--italic .unifiedchat-text { font-style: italic; }
+  .unifiedchat-feed.unifiedchat-text--underline .unifiedchat-text { text-decoration: underline; }
+  .unifiedchat-feed.unifiedchat-text--upper .unifiedchat-text { text-transform: uppercase; }
+  .unifiedchat-feed.unifiedchat-text--lower .unifiedchat-text { text-transform: lowercase; }
   .unifiedchat-text img.unifiedchat-emote {
     height: 1.5em;
     vertical-align: middle;
@@ -121,6 +234,17 @@
 </head>
 <body>
   <div class="unifiedchat-root">
+    <div class="unifiedchat-header" id="unifiedchat-header">
+      <div class="unifiedchat-header-title"><span class="unifiedchat-flame">🔥</span> Общий чат</div>
+      <div class="unifiedchat-header-status">
+        <span class="unifiedchat-status-pill" id="unifiedchat-status-twitch">
+          <span class="unifiedchat-status-dot" id="unifiedchat-dot-twitch"></span> Twitch
+        </span>
+        <span class="unifiedchat-status-pill" id="unifiedchat-status-youtube">
+          <span class="unifiedchat-status-dot" id="unifiedchat-dot-youtube"></span> YouTube
+        </span>
+      </div>
+    </div>
     <div class="unifiedchat-feed" id="unifiedchat-feed"></div>
   </div>
 
@@ -151,6 +275,13 @@
     };
     function iconSpan(cls, key, title) {
       return `<span class="${cls}" title="${escapeHtml(title)}">${ICONS[key] || ""}</span>`;
+    }
+    // Бейдж роли — единый "чип" (см. CSS .unifiedchat-badge--*), цвет берётся
+    // из роли (не из площадки), чтобы модератор Twitch и модератор YouTube
+    // выглядели одинаково. role может отсутствовать — тогда рисуем нейтрально.
+    function badgeSpan(badge) {
+      const roleClass = badge.role ? ` unifiedchat-badge--${badge.role}` : "";
+      return `<span class="unifiedchat-badge${roleClass}" title="${escapeHtml(badge.label || "")}">${ICONS[badge.icon] || ""}</span>`;
     }
 
     // === Настройки виджета ============================================
@@ -184,6 +315,35 @@
       enableThirdPartyEmotes: true,
       textColor: "#f4f0ea",
       accentColor: "#e2820a",
+      // Режим окна: "Авто" сам решает по контексту (внутри FoxFire Hub —
+      // стилизованное окно для стримера, как файл в OBS/браузере — обычный
+      // прозрачный оверлей); можно закрепить явно.
+      viewMode: "Авто (по контексту)",
+      // Фон карточки: можно убрать совсем, задать свой цвет и размыть его
+      // (эффект "стекла"), в дополнение к прозрачности и скруглению выше.
+      enableBackground: true,
+      bgColor: "#1a1512",
+      bgBlur: 0,
+      // Текст сообщения: начертание, регистр, расстояние между буквами и
+      // словами, тень (набор ровно как в примерах настроек).
+      letterSpacing: 0,
+      wordSpacing: 0,
+      textBold: false,
+      textItalic: false,
+      textUnderline: false,
+      textCase: "Обычный",
+      shadowColor: "rgba(0,0,0,0.6)",
+      shadowOffsetX: 0,
+      shadowOffsetY: 1,
+      shadowBlur: 2,
+      // Цвета ролей/бейджей — по умолчанию модераторы синие, спонсоры/подписчики
+      // оранжевые (цвет площадки-акцент), но всё это можно перекрасить.
+      badgeColorBroadcaster: "#ffb703",
+      badgeColorModerator: "#3ea6ff",
+      badgeColorVip: "#c084fc",
+      badgeColorSubscriber: "#e2820a",
+      badgeColorStaff: "#ef4444",
+      badgeColorPartner: "#22c55e",
     };
 
     function readBool(v, fallback) {
@@ -210,6 +370,22 @@
 
     let config = configFromParams();
     const feed = document.getElementById("unifiedchat-feed");
+
+    // === Статус подключения в шапке режима "Стример" =====================
+    // Просто цветная точка + подпись: серая — не настроено/не подключено,
+    // жёлтая — идёт попытка подключения, зелёная — подключено, красная —
+    // ошибка. В режиме "Зритель" (OBS) шапка скрыта и это ни на что не влияет.
+    const STATUS_DOT_CLASS = {
+      idle: "",
+      connecting: "unifiedchat-status-dot--connecting",
+      connected: "unifiedchat-status-dot--connected",
+      error: "unifiedchat-status-dot--error",
+    };
+    function setStatus(platform, state) {
+      const dot = document.getElementById("unifiedchat-dot-" + platform);
+      if (!dot) return;
+      dot.className = "unifiedchat-status-dot " + (STATUS_DOT_CLASS[state] || "");
+    }
 
     const FONT_STACKS = {
       "Системный (по умолчанию)": '"Segoe UI", "Inter", -apple-system, sans-serif',
@@ -241,6 +417,25 @@
     // чатам (визуальные настройки) — вызывается и при старте, и на каждое
     // сообщение postMessage из окна настроек, чтобы предпросмотр обновлялся
     // мгновенно, без перезапуска соединений.
+    // Внутри FoxFire Hub (кнопка "Запустить") доступен window.__TAURI__ — по
+    // этому же признаку виджет ниже выбирает бесплатный способ поиска
+    // YouTube-трансляции. Используем его и для "Авто"-режима окна: как файл в
+    // OBS/браузере (без Hub рядом) __TAURI__ нет → обычный прозрачный оверлей.
+    function resolveViewMode(cfg) {
+      if (cfg.viewMode === "Стример (окно)") return "streamer";
+      if (cfg.viewMode === "Зритель (OBS)") return "viewer";
+      return hasTauri() ? "streamer" : "viewer";
+    }
+
+    function hexToRgbList(hex) {
+      const m = /^#?([0-9a-f]{6})$/i.exec((hex || "").trim());
+      if (!m) return "26, 21, 18";
+      const n = parseInt(m[1], 16);
+      return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
+    }
+
+    const CASE_CLASS = { "ВСЕ ЗАГЛАВНЫЕ": "unifiedchat-text--upper", "все строчные": "unifiedchat-text--lower" };
+
     function applyVisualConfig(cfg) {
       const root = document.documentElement.style;
       root.setProperty("--unifiedchat-accent", cfg.accentColor);
@@ -249,9 +444,46 @@
       root.setProperty("--unifiedchat-radius", cfg.cornerRadius + "px");
       root.setProperty("--unifiedchat-gap", cfg.messageSpacing + "px");
       root.setProperty("--unifiedchat-font", resolveFontStack(cfg));
+      root.setProperty("--unifiedchat-letter-spacing", cfg.letterSpacing + "px");
+      root.setProperty("--unifiedchat-word-spacing", cfg.wordSpacing + "px");
+      root.setProperty(
+        "--unifiedchat-shadow",
+        cfg.shadowBlur > 0 || cfg.shadowOffsetX !== 0 || cfg.shadowOffsetY !== 0
+          ? `${cfg.shadowOffsetX}px ${cfg.shadowOffsetY}px ${cfg.shadowBlur}px ${cfg.shadowColor}`
+          : "none"
+      );
 
-      feed.style.background = `rgba(26, 21, 18, ${Math.min(100, Math.max(0, cfg.bgOpacity)) / 100})`;
+      // Роли/бейджи: единый формат чипа задан в CSS, здесь только цвета.
+      root.setProperty("--unifiedchat-role-broadcaster", cfg.badgeColorBroadcaster);
+      root.setProperty("--unifiedchat-role-moderator", cfg.badgeColorModerator);
+      root.setProperty("--unifiedchat-role-vip", cfg.badgeColorVip);
+      root.setProperty("--unifiedchat-role-subscriber", cfg.badgeColorSubscriber);
+      root.setProperty("--unifiedchat-role-staff", cfg.badgeColorStaff);
+      root.setProperty("--unifiedchat-role-partner", cfg.badgeColorPartner);
+
+      // Фон карточки: можно полностью убрать, задать свой цвет и размыть
+      // (backdrop-filter) в дополнение к обычной прозрачности.
+      root.setProperty("--unifiedchat-bg-color", hexToRgbList(cfg.bgColor));
+      root.setProperty("--unifiedchat-bg-alpha", String(Math.min(100, Math.max(0, cfg.bgOpacity)) / 100));
+      root.setProperty("--unifiedchat-bg-blur", Math.max(0, cfg.bgBlur) + "px");
+      feed.classList.toggle("unifiedchat-no-bg", !cfg.enableBackground);
+
       document.body.style.fontSize = cfg.fontSize + "px";
+
+      // Окно: "стример" (внутри Hub, непрозрачный стилизованный интерфейс) или
+      // "зритель" (прозрачный оверлей для OBS/трансляции) — см. resolveViewMode().
+      const mode = resolveViewMode(cfg);
+      document.body.classList.toggle("unifiedchat-mode-streamer", mode === "streamer");
+      document.body.classList.toggle("unifiedchat-mode-viewer", mode === "viewer");
+
+      // Начертание текста сообщений: жирный/курсив/подчёркнутый/регистр —
+      // применяются классами на саму ленту, чтобы не переписывать каждое
+      // уже отрисованное сообщение по отдельности.
+      feed.classList.toggle("unifiedchat-text--bold", !!cfg.textBold);
+      feed.classList.toggle("unifiedchat-text--italic", !!cfg.textItalic);
+      feed.classList.toggle("unifiedchat-text--underline", !!cfg.textUnderline);
+      Object.values(CASE_CLASS).forEach((c) => feed.classList.remove(c));
+      if (CASE_CLASS[cfg.textCase]) feed.classList.add(CASE_CLASS[cfg.textCase]);
 
       Object.values(ANIM_CLASS).forEach((c) => feed.classList.remove(c));
       feed.classList.add(ANIM_CLASS[cfg.animationStyle] || ANIM_CLASS["Плавно (fade)"]);
@@ -287,7 +519,7 @@
         inner += `<span class="unifiedchat-time">${pad(d.getHours())}:${pad(d.getMinutes())}</span>`;
       }
       if (config.showBadges && msg.badges && msg.badges.length) {
-        inner += msg.badges.map((b) => iconSpan("unifiedchat-badge", b.icon, b.label)).join("");
+        inner += msg.badges.map((b) => badgeSpan(b)).join("");
       }
       if (!msg.system) {
         const authorColor = msg.color || (msg.platform === "twitch" ? "#c084fc" : "#ff8080");
@@ -372,15 +604,18 @@
     // Публичный чат Twitch можно читать без токена/OAuth — достаточно анонимного
     // логина вида "justinfanNNNNN" (стандартный приём, которым пользуются все
     // сторонние Twitch-чат-виджеты). Собственный аккаунт стримера не нужен.
+    // У каждого бейджа есть role — она решает ЦВЕТ чипа (см. applyVisualConfig
+    // и CSS .unifiedchat-badge--*), одинаково для Twitch и YouTube, чтобы
+    // "модератор" везде выглядел одинаково независимо от площадки.
     const TWITCH_BADGE_ICONS = {
-      broadcaster: { icon: "crown", label: "Стример" },
-      moderator: { icon: "shield", label: "Модератор" },
-      vip: { icon: "gem", label: "VIP" },
-      subscriber: { icon: "star", label: "Подписчик" },
-      founder: { icon: "trophy", label: "Фаундер" },
-      partner: { icon: "check", label: "Партнёр" },
-      staff: { icon: "wrench", label: "Staff" },
-      admin: { icon: "wrench", label: "Admin" },
+      broadcaster: { icon: "crown", label: "Стример", role: "broadcaster" },
+      moderator: { icon: "shield", label: "Модератор", role: "moderator" },
+      vip: { icon: "gem", label: "VIP", role: "vip" },
+      subscriber: { icon: "star", label: "Подписчик", role: "subscriber" },
+      founder: { icon: "trophy", label: "Фаундер", role: "subscriber" },
+      partner: { icon: "check", label: "Партнёр", role: "partner" },
+      staff: { icon: "wrench", label: "Staff", role: "staff" },
+      admin: { icon: "wrench", label: "Admin", role: "staff" },
     };
 
     function renderTwitchText(text, emotesRaw) {
@@ -486,12 +721,13 @@
     let twitchSocket = null;
     function connectTwitch(channel) {
       if (twitchSocket) { try { twitchSocket.close(); } catch (_) {} twitchSocket = null; }
-      if (!channel) return;
+      if (!channel) { setStatus("twitch", "idle"); return; }
       let retryDelay = 2000;
       let stopped = false;
 
       function connect() {
         if (stopped) return;
+        setStatus("twitch", "connecting");
         const ws = new WebSocket("wss://irc-ws.chat.twitch.tv:443");
         twitchSocket = ws;
         ws.onopen = () => {
@@ -500,6 +736,7 @@
           ws.send("NICK justinfan" + Math.floor(10000 + Math.random() * 80000));
           ws.send("JOIN #" + channel);
           retryDelay = 2000;
+          setStatus("twitch", "connected");
         };
         ws.onmessage = (event) => {
           event.data
@@ -509,16 +746,18 @@
         };
         ws.onclose = () => {
           if (stopped) return;
+          setStatus("twitch", "connecting");
           setTimeout(connect, retryDelay);
           retryDelay = Math.min(retryDelay * 1.5, 30000);
         };
         ws.onerror = () => {
+          setStatus("twitch", "error");
           try { ws.close(); } catch (_) { /* игнорируем */ }
         };
       }
 
       connect();
-      return () => { stopped = true; if (twitchSocket) try { twitchSocket.close(); } catch (_) {} };
+      return () => { stopped = true; setStatus("twitch", "idle"); if (twitchSocket) try { twitchSocket.close(); } catch (_) {} };
     }
 
     // ================= YOUTUBE =================
@@ -544,10 +783,10 @@
 
     function ytBadges(author) {
       const list = [];
-      if (author.isChatOwner) list.push({ icon: "crown", label: "Владелец канала" });
-      if (author.isChatModerator) list.push({ icon: "shield", label: "Модератор" });
-      if (author.isChatSponsor) list.push({ icon: "star", label: "Спонсор канала" });
-      if (author.isVerified) list.push({ icon: "check", label: "Подтверждён" });
+      if (author.isChatOwner) list.push({ icon: "crown", label: "Владелец канала", role: "broadcaster" });
+      if (author.isChatModerator) list.push({ icon: "shield", label: "Модератор", role: "moderator" });
+      if (author.isChatSponsor) list.push({ icon: "star", label: "Спонсор канала", role: "subscriber" });
+      if (author.isVerified) list.push({ icon: "check", label: "Подтверждён", role: "partner" });
       return list;
     }
 
@@ -666,7 +905,7 @@
       youtubeStoppedRef = stoppedRef;
 
       const { youtubeChannel, youtubeApiKey, youtubeVideoIdOverride } = cfg;
-      if (!youtubeApiKey || (!youtubeChannel && !youtubeVideoIdOverride)) return;
+      if (!youtubeApiKey || (!youtubeChannel && !youtubeVideoIdOverride)) { setStatus("youtube", "idle"); return; }
 
       const usingTauri = hasTauri();
 
@@ -678,6 +917,7 @@
 
       async function loop() {
         if (stoppedRef.stopped) return;
+        setStatus("youtube", "connecting");
         let videoId = null;
         try {
           videoId = await findVideoId();
@@ -700,9 +940,11 @@
             setTimeout(loop, usingTauri ? 20000 : 5 * 60 * 1000);
             return;
           }
+          setStatus("youtube", "connected");
           pollYoutubeMessages(liveChatId, youtubeApiKey, undefined, () => { if (!stoppedRef.stopped) loop(); }, stoppedRef);
         } catch (err) {
           console.warn("unified-chat: ошибка при подключении к live-чату YouTube", err);
+          setStatus("youtube", "error");
           setTimeout(loop, 20000);
         }
       }
@@ -711,15 +953,36 @@
     }
 
     // === Демо-сообщения для предпросмотра (когда обе площадки не заданы) ===
+    // Демо-сообщения показывают сразу все роли/цвета бейджей — удобно, чтобы
+    // проверить свою раскраску в настройках, не дожидаясь реального эфира.
     function showDemoMessages() {
       addMessage({ platform: "twitch", author: "стример", color: "#e2820a", badges: [TWITCH_BADGE_ICONS.broadcaster], html: applyThirdPartyEmotes(escapeHtml("всем привет, погнали стрим!")), ts: Date.now() });
-      addMessage({ platform: "youtube", author: "Зритель42", badges: [{ icon: "star", label: "Спонсор канала" }], html: escapeHtml("наконец-то на двух площадках сразу видно чат 🔥"), ts: Date.now() });
+      addMessage({ platform: "youtube", author: "Зритель42", badges: [{ icon: "star", label: "Спонсор канала", role: "subscriber" }], html: escapeHtml("наконец-то на двух площадках сразу видно чат 🔥"), ts: Date.now() });
       addMessage({ platform: "twitch", author: "модератор_чата", color: "#3ea6ff", badges: [TWITCH_BADGE_ICONS.moderator], html: applyThirdPartyEmotes(escapeHtml("PogU красиво стало")), ts: Date.now() });
+      addMessage({ platform: "twitch", author: "vip_зритель", color: "#c084fc", badges: [TWITCH_BADGE_ICONS.vip], html: applyThirdPartyEmotes(escapeHtml("красивые бейджи стали, ровные!")), ts: Date.now() });
       addMessage({ platform: "youtube", author: "ЩедрыйЗритель", badges: [], html: escapeHtml("Спасибо за стрим!"), ts: Date.now(), superchat: "500 ₽" });
       if (config.highlightModActions) {
         addMessage({ platform: "twitch", system: true, html: "нарушитель получил(а) таймаут (600 сек)", ts: Date.now() });
       }
     }
+
+    // Одно случайное тестовое сообщение — используется кнопкой "Тестовое
+    // сообщение" в settings.html, чтобы проверить анимацию появления и стиль,
+    // не открывая настоящий эфир.
+    const TEST_MESSAGE_POOL = [
+      { platform: "twitch", author: "стример", color: "#e2820a", badges: [TWITCH_BADGE_ICONS.broadcaster], text: "проверяем как это будет выглядеть в реальном чате" },
+      { platform: "youtube", author: "ОбычныйЗритель", badges: [], text: "привет из YouTube-чата 👋" },
+      { platform: "twitch", author: "модератор_чата", color: "#3ea6ff", badges: [TWITCH_BADGE_ICONS.moderator], text: "слежу за порядком PogChamp" },
+      { platform: "twitch", author: "vip_зритель", color: "#c084fc", badges: [TWITCH_BADGE_ICONS.vip], text: "VIP на месте!" },
+      { platform: "youtube", author: "ЩедрыйЗритель", badges: [{ icon: "star", label: "Спонсор канала", role: "subscriber" }], text: "держи донат ❤️", superchat: "250 ₽" },
+    ];
+    function showRandomTestMessage() {
+      const m = TEST_MESSAGE_POOL[Math.floor(Math.random() * TEST_MESSAGE_POOL.length)];
+      addMessage({ platform: m.platform, author: m.author, color: m.color, badges: m.badges, html: applyThirdPartyEmotes(escapeHtml(m.text)), ts: Date.now(), superchat: m.superchat });
+    }
+    window.addEventListener("message", (event) => {
+      if (event.data && event.data.type === "unifiedchat:test-message") showRandomTestMessage();
+    });
 
     // === Запуск и применение конфига (общая точка для старта и для
     // postMessage-обновлений из окна настроек) ===

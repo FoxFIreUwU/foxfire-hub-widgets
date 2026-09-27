@@ -5,22 +5,22 @@
 <title>Настройки — Общий чат (Twitch + YouTube)</title>
 <style>
   /* Тот же принцип изоляции стилей, что и в index.html — префикс "ucs-"
-     (unified-chat-settings), чтобы не конфликтовать с Hub. Палитра — тёплая
-     тёмная, в стиле FoxFire Hub (#1a1512 фон, #e2820a акцент по умолчанию). */
+     (unified-chat-settings), чтобы не конфликтовать с Hub. Палитра — фирменная
+     FoxFire (SYSTEM_MAIN_APP.md): #0d0c0f фон, #1a1512 карточки, #e2820a акцент. */
   * { box-sizing: border-box; }
   html, body {
     margin: 0; padding: 0; height: 100%;
-    background: #14100d;
+    background: #0d0c0f;
     color: #f4f0ea;
     font-family: "Segoe UI", "Inter", -apple-system, sans-serif;
   }
   .ucs-root { display: flex; height: 100%; }
   .ucs-form {
-    width: 380px;
-    min-width: 320px;
+    width: 400px;
+    min-width: 340px;
     overflow-y: auto;
     padding: 18px;
-    background: #1a1512;
+    background: #14100d;
     border-right: 1px solid rgba(255,255,255,0.06);
   }
   .ucs-preview {
@@ -31,14 +31,28 @@
   }
   .ucs-preview-bar {
     padding: 10px 16px;
-    display: flex; align-items: center; gap: 10px;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
     background: #1a1512;
     border-bottom: 1px solid rgba(255,255,255,0.06);
     font-size: 13px;
     color: #a89a8c;
   }
   .ucs-preview-bar strong { color: #f4f0ea; }
+  .ucs-preview-spacer { flex: 1; }
   .ucs-preview iframe { flex: 1; border: none; width: 100%; }
+
+  /* Переключатель "Стример / Зритель" над предпросмотром */
+  .ucs-segmented { display: inline-flex; border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.12); }
+  .ucs-segmented button {
+    border: none; background: #1a1512; color: #a89a8c; font-size: 12px; padding: 6px 10px;
+    cursor: pointer; font-family: inherit;
+  }
+  .ucs-segmented button.active { background: #e2820a; color: #1a1512; font-weight: 700; }
+  .ucs-preview-test-btn {
+    border: 1px solid rgba(255,255,255,0.12); background: #241d18; color: #f4f0ea;
+    font-size: 12px; padding: 6px 10px; border-radius: 8px; cursor: pointer; font-family: inherit;
+  }
+  .ucs-preview-test-btn:hover { background: #2c231c; }
 
   h1 { font-size: 17px; margin: 0 0 4px; }
   .ucs-sub { color: #a89a8c; font-size: 12.5px; margin: 0 0 18px; }
@@ -57,11 +71,43 @@
     font-size: 13px;
   }
   .ucs-field input[type="color"] { width: 48px; height: 30px; border: none; background: none; padding: 0; }
+  .ucs-color-row { display: flex; align-items: center; gap: 8px; }
   .ucs-checkbox { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 10px; color: #d8cfc5; }
   .ucs-checkbox input { width: 16px; height: 16px; }
   .ucs-hint { font-size: 11.5px; color: #7d7267; margin-top: -6px; margin-bottom: 12px; line-height: 1.4; }
   .ucs-row { display: flex; gap: 10px; }
   .ucs-row > * { flex: 1; }
+  .ucs-row3 { display: flex; gap: 8px; }
+  .ucs-row3 > * { flex: 1; }
+
+  /* Мини-переключатель B / I / U, как в примере настроек */
+  .ucs-toggle-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .ucs-toggle-btn {
+    flex: 1; padding: 7px 0; text-align: center; border-radius: 8px; cursor: pointer;
+    border: 1px solid rgba(255,255,255,0.12); background: #0f0c0a; color: #d8cfc5; font-size: 13px;
+  }
+  .ucs-toggle-btn.active { background: #e2820a; border-color: #e2820a; color: #1a1512; font-weight: 700; }
+
+  /* Подвкладки "Шрифт / Текст / Тень" внутри раздела "Текст сообщения" */
+  .ucs-subtabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  .ucs-subtab {
+    padding: 7px 10px; font-size: 12.5px; color: #a89a8c; cursor: pointer;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .ucs-subtab.active { color: #e2820a; border-bottom-color: #e2820a; font-weight: 700; }
+  .ucs-subpanel { display: none; }
+  .ucs-subpanel.active { display: block; }
+
+  /* Каталог готовых тем — цветные плашки-пресеты */
+  .ucs-presets { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 8px; }
+  .ucs-preset {
+    border-radius: 10px; padding: 10px; cursor: pointer; border: 1px solid rgba(255,255,255,0.1);
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .ucs-preset:hover { border-color: rgba(255,255,255,0.25); }
+  .ucs-preset-swatches { display: flex; gap: 4px; }
+  .ucs-preset-swatch { width: 16px; height: 16px; border-radius: 5px; }
+  .ucs-preset-name { font-size: 12px; color: #f4f0ea; }
 
   .ucs-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
   .ucs-btn {
@@ -78,7 +124,13 @@
   <div class="ucs-root">
     <div class="ucs-form">
       <h1>Общий чат (Twitch + YouTube)</h1>
-      <p class="ucs-sub">Меняешь настройки слева — справа сразу видно, как это будет выглядеть.</p>
+      <p class="ucs-sub">Меняешь настройки слева — справа сразу видно, как это будет выглядеть, включая анимации.</p>
+
+      <div class="ucs-section">
+        <h2>Каталог готовых тем</h2>
+        <p class="ucs-hint">Один клик задаёт сразу цвета, фон и скругление — дальше можно донастроить вручную под себя.</p>
+        <div class="ucs-presets" id="presets-list"></div>
+      </div>
 
       <div class="ucs-section">
         <h2>Подключение</h2>
@@ -107,6 +159,19 @@
       </div>
 
       <div class="ucs-section">
+        <h2>Окно виджета</h2>
+        <label class="ucs-field">
+          <span class="ucs-label">Как показывать</span>
+          <select id="f-viewMode">
+            <option>Авто (по контексту)</option>
+            <option>Стример (окно)</option>
+            <option>Зритель (OBS)</option>
+          </select>
+        </label>
+        <p class="ucs-hint">«Авто» — сам определяет: запущено внутри FoxFire Hub кнопкой «Запустить» → красивое стилизованное окно для тебя; вставлено ссылкой в источник «Браузер» OBS → обычный прозрачный оверлей для зрителей. Менять вручную нужно редко.</p>
+      </div>
+
+      <div class="ucs-section">
         <h2>Лента сообщений</h2>
         <label class="ucs-field">
           <span class="ucs-label">Направление</span>
@@ -121,26 +186,6 @@
         </div>
         <label class="ucs-checkbox"><input type="checkbox" id="f-showTimestamps" /> Показывать время сообщения</label>
         <label class="ucs-checkbox"><input type="checkbox" id="f-highlightModActions" /> Показывать действия модераторов (таймауты, удаления)</label>
-      </div>
-
-      <div class="ucs-section">
-        <h2>Шрифт и анимация</h2>
-        <label class="ucs-field">
-          <span class="ucs-label">Шрифт</span>
-          <select id="f-fontFamily">
-            <option>Системный (по умолчанию)</option>
-            <option>Segoe UI</option>
-            <option>Arial</option>
-            <option>Verdana</option>
-            <option>Georgia</option>
-            <option>Comic Sans MS</option>
-            <option>Свой шрифт...</option>
-          </select>
-        </label>
-        <label class="ucs-field" id="f-fontFamilyCustomWrap" style="display:none">
-          <span class="ucs-label">Название своего шрифта (как в системе)</span>
-          <input type="text" id="f-fontFamilyCustom" placeholder="например: Montserrat" />
-        </label>
         <label class="ucs-field">
           <span class="ucs-label">Анимация появления</span>
           <select id="f-animationStyle">
@@ -153,21 +198,108 @@
       </div>
 
       <div class="ucs-section">
-        <h2>Стилистика</h2>
+        <h2>Текст сообщения</h2>
+        <div class="ucs-subtabs">
+          <div class="ucs-subtab active" data-subtab="font">ШРИФТ</div>
+          <div class="ucs-subtab" data-subtab="text">ТЕКСТ</div>
+          <div class="ucs-subtab" data-subtab="shadow">ТЕНЬ</div>
+        </div>
+
+        <div class="ucs-subpanel active" data-subpanel="font">
+          <label class="ucs-field">
+            <span class="ucs-label">Шрифт</span>
+            <select id="f-fontFamily">
+              <option>Системный (по умолчанию)</option>
+              <option>Segoe UI</option>
+              <option>Arial</option>
+              <option>Verdana</option>
+              <option>Georgia</option>
+              <option>Comic Sans MS</option>
+              <option>Свой шрифт...</option>
+            </select>
+          </label>
+          <label class="ucs-field" id="f-fontFamilyCustomWrap" style="display:none">
+            <span class="ucs-label">Название своего шрифта (как в системе)</span>
+            <input type="text" id="f-fontFamilyCustom" placeholder="например: Montserrat" />
+          </label>
+          <div class="ucs-row">
+            <label class="ucs-field"><span class="ucs-label">Размер шрифта (px)</span><input type="number" id="f-fontSize" /></label>
+            <label class="ucs-field"><span class="ucs-label">Масштаб (%)</span><input type="number" id="f-scale" /></label>
+          </div>
+          <div class="ucs-row">
+            <label class="ucs-field"><span class="ucs-label">Между буквами (px)</span><input type="number" id="f-letterSpacing" /></label>
+            <label class="ucs-field"><span class="ucs-label">Между словами (px)</span><input type="number" id="f-wordSpacing" /></label>
+          </div>
+        </div>
+
+        <div class="ucs-subpanel" data-subpanel="text">
+          <label class="ucs-field">
+            <span class="ucs-label">Цвет текста</span>
+            <div class="ucs-color-row"><input type="color" id="f-textColor" /></div>
+          </label>
+          <span class="ucs-label" style="display:block;margin-bottom:4px;">Стиль текста</span>
+          <div class="ucs-toggle-row">
+            <div class="ucs-toggle-btn" id="toggle-textBold"><b>B</b></div>
+            <div class="ucs-toggle-btn" id="toggle-textItalic"><i>I</i></div>
+            <div class="ucs-toggle-btn" id="toggle-textUnderline"><u>U</u></div>
+          </div>
+          <label class="ucs-field">
+            <span class="ucs-label">Трансформация</span>
+            <select id="f-textCase">
+              <option>Обычный</option>
+              <option>ВСЕ ЗАГЛАВНЫЕ</option>
+              <option>все строчные</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="ucs-subpanel" data-subpanel="shadow">
+          <label class="ucs-field">
+            <span class="ucs-label">Цвет тени</span>
+            <input type="text" id="f-shadowColor" placeholder="rgba(0,0,0,0.6)" />
+          </label>
+          <div class="ucs-row3">
+            <label class="ucs-field"><span class="ucs-label">Смещ. X (px)</span><input type="number" id="f-shadowOffsetX" /></label>
+            <label class="ucs-field"><span class="ucs-label">Смещ. Y (px)</span><input type="number" id="f-shadowOffsetY" /></label>
+            <label class="ucs-field"><span class="ucs-label">Размытие (px)</span><input type="number" id="f-shadowBlur" /></label>
+          </div>
+        </div>
+      </div>
+
+      <div class="ucs-section">
+        <h2>Фон карточки</h2>
+        <label class="ucs-checkbox"><input type="checkbox" id="f-enableBackground" /> Показывать фон карточки (выключи, чтобы оставить только сами сообщения)</label>
         <div class="ucs-row">
-          <label class="ucs-field"><span class="ucs-label">Размер шрифта (px)</span><input type="number" id="f-fontSize" /></label>
-          <label class="ucs-field"><span class="ucs-label">Масштаб (%)</span><input type="number" id="f-scale" /></label>
+          <label class="ucs-field"><span class="ucs-label">Цвет фона</span><div class="ucs-color-row"><input type="color" id="f-bgColor" /></div></label>
+          <label class="ucs-field"><span class="ucs-label">Непрозрачность (%)</span><input type="number" id="f-bgOpacity" /></label>
         </div>
         <div class="ucs-row">
+          <label class="ucs-field"><span class="ucs-label">Размытие фона (px)</span><input type="number" id="f-bgBlur" /></label>
           <label class="ucs-field"><span class="ucs-label">Скругление углов (px)</span><input type="number" id="f-cornerRadius" /></label>
-          <label class="ucs-field"><span class="ucs-label">Непрозрачность фона (%)</span><input type="number" id="f-bgOpacity" /></label>
+        </div>
+      </div>
+
+      <div class="ucs-section">
+        <h2>Роли и бейджи</h2>
+        <p class="ucs-hint">Модераторы по умолчанию синие, спонсоры/подписчики — акцентным (оранжевым) цветом площадки. Любой цвет можно поменять.</p>
+        <div class="ucs-row">
+          <label class="ucs-field"><span class="ucs-label">Стример</span><div class="ucs-color-row"><input type="color" id="f-badgeColorBroadcaster" /></div></label>
+          <label class="ucs-field"><span class="ucs-label">Модератор</span><div class="ucs-color-row"><input type="color" id="f-badgeColorModerator" /></div></label>
         </div>
         <div class="ucs-row">
-          <label class="ucs-field"><span class="ucs-label">Цвет текста</span><input type="color" id="f-textColor" /></label>
-          <label class="ucs-field"><span class="ucs-label">Акцентный цвет</span><input type="color" id="f-accentColor" /></label>
+          <label class="ucs-field"><span class="ucs-label">VIP</span><div class="ucs-color-row"><input type="color" id="f-badgeColorVip" /></div></label>
+          <label class="ucs-field"><span class="ucs-label">Подписчик/спонсор</span><div class="ucs-color-row"><input type="color" id="f-badgeColorSubscriber" /></div></label>
         </div>
+        <div class="ucs-row">
+          <label class="ucs-field"><span class="ucs-label">Staff/Admin</span><div class="ucs-color-row"><input type="color" id="f-badgeColorStaff" /></div></label>
+          <label class="ucs-field"><span class="ucs-label">Партнёр</span><div class="ucs-color-row"><input type="color" id="f-badgeColorPartner" /></div></label>
+        </div>
+        <label class="ucs-field">
+          <span class="ucs-label">Акцентный цвет (суперчаты, скролл, рамки)</span>
+          <div class="ucs-color-row"><input type="color" id="f-accentColor" /></div>
+        </label>
         <label class="ucs-checkbox"><input type="checkbox" id="f-showPlatformIcons" /> Показывать значок площадки</label>
-        <label class="ucs-checkbox"><input type="checkbox" id="f-showBadges" /> Показывать бейджи (SVG-иконки)</label>
+        <label class="ucs-checkbox"><input type="checkbox" id="f-showBadges" /> Показывать бейджи ролей</label>
         <label class="ucs-checkbox"><input type="checkbox" id="f-enableThirdPartyEmotes" /> Сторонние эмоуты Twitch (7TV, BetterTTV — глобальные)</label>
       </div>
 
@@ -183,7 +315,16 @@
     </div>
 
     <div class="ucs-preview">
-      <div class="ucs-preview-bar">Предпросмотр · <strong id="preview-caption">демо-режим</strong></div>
+      <div class="ucs-preview-bar">
+        Предпросмотр · <strong id="preview-caption">демо-режим</strong>
+        <div class="ucs-preview-spacer"></div>
+        <button class="ucs-preview-test-btn" id="btn-test-message">+ Тестовое сообщение</button>
+        <button class="ucs-preview-test-btn" id="btn-replay-anim">↻ Анимация заново</button>
+        <div class="ucs-segmented" id="preview-mode-toggle">
+          <button data-mode="Стример (окно)">Стример</button>
+          <button data-mode="Зритель (OBS)">Зритель</button>
+        </div>
+      </div>
       <iframe id="preview-frame" src="index.html"></iframe>
     </div>
   </div>
@@ -198,7 +339,40 @@
       cornerRadius: 16, maxMessages: 40, bgOpacity: 55, showPlatformIcons: true,
       showBadges: true, showTimestamps: false, highlightModActions: true,
       enableThirdPartyEmotes: true, textColor: "#f4f0ea", accentColor: "#e2820a",
+      viewMode: "Авто (по контексту)",
+      enableBackground: true, bgColor: "#1a1512", bgBlur: 0,
+      letterSpacing: 0, wordSpacing: 0,
+      textBold: false, textItalic: false, textUnderline: false, textCase: "Обычный",
+      shadowColor: "rgba(0,0,0,0.6)", shadowOffsetX: 0, shadowOffsetY: 1, shadowBlur: 2,
+      badgeColorBroadcaster: "#ffb703", badgeColorModerator: "#3ea6ff", badgeColorVip: "#c084fc",
+      badgeColorSubscriber: "#e2820a", badgeColorStaff: "#ef4444", badgeColorPartner: "#22c55e",
     };
+
+    // === Каталог готовых тем =============================================
+    // Каждая тема — это просто набор значений полей, которые накладываются
+    // поверх текущего конфига (подключение и текст сообщений не трогаем).
+    const PRESETS = [
+      {
+        name: "FoxFire (по умолчанию)",
+        swatches: ["#1a1512", "#e2820a", "#3ea6ff"],
+        values: { bgColor: "#1a1512", bgOpacity: 55, bgBlur: 0, textColor: "#f4f0ea", accentColor: "#e2820a", cornerRadius: 16, badgeColorModerator: "#3ea6ff", badgeColorSubscriber: "#e2820a" },
+      },
+      {
+        name: "Стекло (без фона)",
+        swatches: ["#0d0c0f", "#f4f0ea", "#e2820a"],
+        values: { enableBackground: false, bgBlur: 6, textColor: "#ffffff", shadowColor: "rgba(0,0,0,0.85)", shadowOffsetY: 1, shadowBlur: 4, cornerRadius: 14 },
+      },
+      {
+        name: "Неон",
+        swatches: ["#120a1e", "#b967ff", "#22d3ee"],
+        values: { bgColor: "#120a1e", bgOpacity: 65, textColor: "#f2eaff", accentColor: "#b967ff", badgeColorModerator: "#22d3ee", badgeColorVip: "#b967ff", badgeColorSubscriber: "#ff4fa3", cornerRadius: 18 },
+      },
+      {
+        name: "Минимал",
+        swatches: ["#111111", "#ffffff", "#8a8a8a"],
+        values: { bgColor: "#111111", bgOpacity: 35, bgBlur: 4, textColor: "#ffffff", accentColor: "#c9c9c9", cornerRadius: 8, showPlatformIcons: false },
+      },
+    ];
 
     // Начальные значения — из query-параметров этого окна, если оно открыто
     // с уже сохранённым конфигом (та же схема параметров, что у index.html),
@@ -231,6 +405,27 @@
     });
     const demoCheckbox = document.getElementById("f-demoMode");
 
+    // --- Подвкладки "Шрифт / Текст / Тень" ---
+    document.querySelectorAll(".ucs-subtab").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".ucs-subtab").forEach((t) => t.classList.remove("active"));
+        document.querySelectorAll(".ucs-subpanel").forEach((p) => p.classList.remove("active"));
+        tab.classList.add("active");
+        document.querySelector('.ucs-subpanel[data-subpanel="' + tab.dataset.subtab + '"]').classList.add("active");
+      });
+    });
+
+    // --- Мини-переключатели B / I / U ---
+    ["textBold", "textItalic", "textUnderline"].forEach((key) => {
+      const btn = document.getElementById("toggle-" + key);
+      btn.addEventListener("click", () => {
+        config[key] = !config[key];
+        btn.classList.toggle("active", config[key]);
+        pushToPreview(false);
+        notifyHubEmbedded(config);
+      });
+    });
+
     function fillFormFromConfig() {
       Object.keys(DEFAULTS).forEach((key) => {
         const el = fields[key];
@@ -240,6 +435,12 @@
       });
       document.getElementById("f-fontFamilyCustomWrap").style.display =
         config.fontFamily === "Свой шрифт..." ? "block" : "none";
+      ["textBold", "textItalic", "textUnderline"].forEach((key) => {
+        document.getElementById("toggle-" + key).classList.toggle("active", !!config[key]);
+      });
+      document.querySelectorAll(".ucs-segmented button").forEach((b) => {
+        b.classList.toggle("active", b.dataset.mode === config.viewMode);
+      });
     }
 
     function readFormIntoConfig() {
@@ -283,6 +484,9 @@
       readFormIntoConfig();
       document.getElementById("f-fontFamilyCustomWrap").style.display =
         config.fontFamily === "Свой шрифт..." ? "block" : "none";
+      document.querySelectorAll(".ucs-segmented button").forEach((b) => {
+        b.classList.toggle("active", b.dataset.mode === config.viewMode);
+      });
       pushToPreview(false);
       // Живое сохранение: если страница встроена в Hub, каждое изменение поля
       // сразу применяется, без отдельного клика на "Сохранить" — так же, как
@@ -302,7 +506,49 @@
       pushToPreview(true);
     });
 
+    // === Каталог готовых тем: рисуем плашки и применяем при клике ===
+    const presetsList = document.getElementById("presets-list");
+    PRESETS.forEach((preset) => {
+      const el = document.createElement("div");
+      el.className = "ucs-preset";
+      el.style.background = "#0f0c0a";
+      el.innerHTML =
+        '<div class="ucs-preset-swatches">' +
+        preset.swatches.map((c) => `<span class="ucs-preset-swatch" style="background:${c}"></span>`).join("") +
+        '</div><div class="ucs-preset-name">' + preset.name + '</div>';
+      el.addEventListener("click", () => {
+        Object.assign(config, preset.values);
+        fillFormFromConfig();
+        pushToPreview(false);
+        notifyHubEmbedded(config);
+      });
+      presetsList.appendChild(el);
+    });
+
+    // === Переключатель предпросмотра "Стример / Зритель" ===
+    // Это то же самое поле viewMode, что и в разделе "Окно виджета" — кнопки
+    // здесь просто быстрый доступ, чтобы сразу увидеть обе версии интерфейса.
+    document.querySelectorAll(".ucs-segmented button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        config.viewMode = btn.dataset.mode;
+        fillFormFromConfig();
+        pushToPreview(false);
+        notifyHubEmbedded(config);
+      });
+    });
+
+    // === Тестовая панель: тестовое сообщение и повтор анимации ===
+    document.getElementById("btn-test-message").addEventListener("click", () => {
+      iframe.contentWindow.postMessage({ type: "unifiedchat:test-message" }, "*");
+    });
+    document.getElementById("btn-replay-anim").addEventListener("click", () => {
+      pushToPreview(true);
+    });
+
     // === Ссылка для OBS: та же query-строка, что понимает index.html ===
+    // Для ссылки OBS всегда фиксируем "Зритель (OBS)" — независимо от того,
+    // что сейчас выбрано для предпросмотра, чтобы случайно не вставить в OBS
+    // ссылку с непрозрачным окном стримера.
     function buildQueryString(cfg) {
       const params = new URLSearchParams();
       Object.keys(DEFAULTS).forEach((key) => params.set(key, String(cfg[key])));
@@ -311,8 +557,9 @@
 
     document.getElementById("btn-copy-obs").addEventListener("click", async () => {
       readFormIntoConfig();
+      const obsConfig = { ...config, viewMode: "Зритель (OBS)" };
       const indexUrl = new URL("index.html", window.location.href).toString();
-      const link = indexUrl + "?" + buildQueryString(config);
+      const link = indexUrl + "?" + buildQueryString(obsConfig);
       try {
         await navigator.clipboard.writeText(link);
         document.getElementById("copied-note").textContent = "Ссылка скопирована в буфер обмена ✓";
