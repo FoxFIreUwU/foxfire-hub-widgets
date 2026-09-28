@@ -264,7 +264,7 @@
         "default": "#22c55e"
       }
     },
-    "minAppVersion": "0.1.10",
+    "minAppVersion": "0.1.7",
     "versions": [
       {
         "version": "2.3.1",
