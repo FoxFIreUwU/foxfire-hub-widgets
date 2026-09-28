@@ -54,7 +54,8 @@
   // Как обычный файл (например, вставленный ссылкой в источник "Браузер" в
   // OBS) — window.__TAURI__ не существует.
   function hasTauri() {
-    return !!(global.__TAURI__ && global.__TAURI__.event && global.__TAURI__.tauri);
+    // Tauri v1: __TAURI__.tauri; Tauri v2: __TAURI__.core (или __TAURI_INTERNALS__).
+    return !!(global.__TAURI__ && global.__TAURI__.event && (global.__TAURI__.tauri || global.__TAURI__.core)) || !!global.__TAURI_INTERNALS__;
   }
 
   // Встроена ли именно ЭТА страница как <iframe> внутрь окна Hub (так

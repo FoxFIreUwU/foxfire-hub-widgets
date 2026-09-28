@@ -86,6 +86,8 @@
     box-shadow: 0 0 0 rgba(0,0,0,0);
     transition: background 0.2s, box-shadow 0.2s;
   }
+  .unifiedchat-status-text { display: none; font-size: 10.5px; opacity: 0.75; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  body.unifiedchat-mode-streamer .unifiedchat-status-text { display: inline; }
   .unifiedchat-status-dot--connected { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
   .unifiedchat-status-dot--connecting { background: #eab308; box-shadow: 0 0 6px #eab308; }
   .unifiedchat-status-dot--error { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
@@ -149,10 +151,17 @@
     padding: 6px 10px;
     border-radius: var(--unifiedchat-radius);
     background: rgba(var(--unifiedchat-bg-color), var(--unifiedchat-bg-alpha));
-    backdrop-filter: blur(var(--unifiedchat-bg-blur));
-    -webkit-backdrop-filter: blur(var(--unifiedchat-bg-blur));
     box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
     word-break: break-word;
+  }
+  /* Размытие фона ("стекло") включается ТОЛЬКО классом .unifiedchat-glass и
+     только в окне стримера. В OBS (CEF, прозрачная страница) любой
+     backdrop-filter — даже blur(0px) — рисует за сообщениями чёрный
+     прямоугольник, а размывать там всё равно нечего: под чатом нет фона
+     страницы, только видео трансляции. Поэтому в режиме зрителя его нет. */
+  .unifiedchat-feed.unifiedchat-glass .unifiedchat-msg {
+    backdrop-filter: blur(var(--unifiedchat-bg-blur));
+    -webkit-backdrop-filter: blur(var(--unifiedchat-bg-blur));
   }
   /* enableBackground=false — убирает фон/тень карточки, оставляя только
      сами сообщения (класс вешается на ленту, см. applyVisualConfig). */
@@ -287,17 +296,16 @@
       <div class="unifiedchat-header-title"><span class="unifiedchat-flame">🔥</span> Общий чат</div>
       <div class="unifiedchat-header-status">
         <span class="unifiedchat-status-pill" id="unifiedchat-status-twitch">
-          <span class="unifiedchat-status-dot" id="unifiedchat-dot-twitch"></span> Twitch
+          <span class="unifiedchat-status-dot" id="unifiedchat-dot-twitch"></span> Twitch <span class="unifiedchat-status-text" id="unifiedchat-txt-twitch"></span>
         </span>
         <span class="unifiedchat-status-pill" id="unifiedchat-status-youtube">
-          <span class="unifiedchat-status-dot" id="unifiedchat-dot-youtube"></span> YouTube
+          <span class="unifiedchat-status-dot" id="unifiedchat-dot-youtube"></span> YouTube <span class="unifiedchat-status-text" id="unifiedchat-txt-youtube"></span>
         </span>
       </div>
     </div>
     <div class="unifiedchat-feed" id="unifiedchat-feed"></div>
   </div>
 
-  <script src="foxfirehub-bridge.js"></script>
   <script>
     // === SVG-иконки бейджей и площадок ===============================
     // Свои минималистичные глифы (не логотипы Twitch/YouTube — просто
@@ -348,6 +356,8 @@
       youtubeChannel: "",
       youtubeApiKey: "",
       youtubeVideoIdOverride: "",
+      // Как читать чат YouTube: без ключа (через Hub) или официально по API-ключу.
+      youtubeMode: "Без ключа (через Hub)",
       direction: "Новые снизу",
       fontFamily: "Системный (по умолчанию)",
       fontFamilyCustom: "",
@@ -431,10 +441,12 @@
       connected: "unifiedchat-status-dot--connected",
       error: "unifiedchat-status-dot--error",
     };
-    function setStatus(platform, state) {
+    function setStatus(platform, state, text) {
       const dot = document.getElementById("unifiedchat-dot-" + platform);
-      if (!dot) return;
-      dot.className = "unifiedchat-status-dot " + (STATUS_DOT_CLASS[state] || "");
+      if (dot) dot.className = "unifiedchat-status-dot " + (STATUS_DOT_CLASS[state] || "");
+      const txt = document.getElementById("unifiedchat-txt-" + platform);
+      if (txt) txt.textContent = text || "";
+      if (state === "error") console.warn("unified-chat [" + platform + "]:", text || "ошибка");
     }
 
     const FONT_STACKS = {
@@ -471,10 +483,26 @@
     // этому же признаку виджет ниже выбирает бесплатный способ поиска
     // YouTube-трансляции. Используем его и для "Авто"-режима окна: как файл в
     // OBS/браузере (без Hub рядом) __TAURI__ нет → обычный прозрачный оверлей.
+    // Порядок решения:
+    //  1) ?view=obs в адресе — это ссылка для OBS, ВСЕГДА зритель (иначе общий
+    //     config.js с viewMode="Стример (окно)" превращал бы OBS в непрозрачное окно);
+    //  2) явный выбор в настройках («Стример (окно)» / «Зритель (OBS)»);
+    //  3) «Авто»: внутри Hub (Tauri, asset/tauri-адрес или вложенный предпросмотр) —
+    //     стример, http://127.0.0.1 / file:// / обычный браузер — зритель.
+    function isHubContext() {
+      if (hasTauri()) return true;
+      try { if (window.__TAURI_INTERNALS__ || window.__TAURI__) return true; } catch (_) {}
+      const h = location.hostname, pr = location.protocol;
+      if (/^(asset|tauri)\.localhost$/i.test(h) || pr === "asset:" || pr === "tauri:") return true;
+      if (window.parent !== window && location.protocol !== "http:" && location.protocol !== "https:") return true; // srcdoc-предпросмотр
+      return false;
+    }
     function resolveViewMode(cfg) {
+      const forced = new URLSearchParams(location.search).get("view");
+      if (forced === "obs") return "viewer";
       if (cfg.viewMode === "Стример (окно)") return "streamer";
       if (cfg.viewMode === "Зритель (OBS)") return "viewer";
-      return hasTauri() ? "streamer" : "viewer";
+      return forced === "hub" || isHubContext() ? "streamer" : "viewer";
     }
 
     function hexToRgbList(hex) {
@@ -525,6 +553,8 @@
       const mode = resolveViewMode(cfg);
       document.body.classList.toggle("unifiedchat-mode-streamer", mode === "streamer");
       document.body.classList.toggle("unifiedchat-mode-viewer", mode === "viewer");
+      // Размытие — только в окне стримера и только если blur > 0 (см. CSS .unifiedchat-glass).
+      feed.classList.toggle("unifiedchat-glass", mode === "streamer" && cfg.enableBackground && cfg.bgBlur > 0);
 
       // Начертание текста сообщений: жирный/курсив/подчёркнутый/регистр —
       // применяются классами на саму ленту, чтобы не переписывать каждое
@@ -614,7 +644,7 @@
     function showEmptyState() {
       if (feed.children.length === 0) {
         feed.innerHTML =
-          '<div class="unifiedchat-empty">Настройте виджет: укажите канал Twitch и/или канал + API-ключ YouTube в настройках.</div>';
+          '<div class="unifiedchat-empty">Настройте виджет: укажите канал Twitch и/или канал YouTube в настройках.</div>';
       }
     }
 
@@ -627,9 +657,17 @@
     // подходят под тот же принцип анонимного чтения, что и сам Twitch-чат.
     const thirdPartyEmotes = new Map(); // "PogU" -> url
 
+    // fetch с таймаутом: без него зависший запрос (7TV/BTTV недоступны) мог
+    // навсегда заблокировать запуск виджета — пустое окно без сообщений и ошибок.
+    function fetchWithTimeout(url, ms) {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), ms);
+      return fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(t));
+    }
+
     async function loadThirdPartyEmotesGlobal() {
       try {
-        const res = await fetch("https://7tv.io/v3/emote-sets/global");
+        const res = await fetchWithTimeout("https://7tv.io/v3/emote-sets/global", 5000);
         const data = await res.json();
         (data.emotes || []).forEach((e) => {
           const files = e.data && e.data.host && e.data.host.files;
@@ -641,7 +679,7 @@
         console.warn("unified-chat: не удалось загрузить глобальные эмоуты 7TV", err);
       }
       try {
-        const res = await fetch("https://api.betterttv.net/3/cached/emotes/global");
+        const res = await fetchWithTimeout("https://api.betterttv.net/3/cached/emotes/global", 5000);
         const data = await res.json();
         (data || []).forEach((e) => {
           if (!thirdPartyEmotes.has(e.code)) {
@@ -724,9 +762,21 @@
       return tags;
     }
 
+    let currentTwitchChannel = "";
     function handleTwitchLine(line, ws) {
       if (line.startsWith("PING")) {
         ws.send("PONG :tmi.twitch.tv");
+        return;
+      }
+      // Подтверждение входа в чат канала (JOIN / конец списка имён) — только
+      // теперь честно считаем, что подключились.
+      if (/ (366|JOIN) /.test(line) && !/PRIVMSG/.test(line)) {
+        setStatus("twitch", "connected", "#" + currentTwitchChannel);
+        return;
+      }
+      if (/ NOTICE /.test(line)) {
+        const notice = line.replace(/^.* NOTICE [^ ]+ :?/, "");
+        setStatus("twitch", "error", notice);
         return;
       }
 
@@ -788,10 +838,11 @@
       if (!channel) { setStatus("twitch", "idle"); return; }
       let retryDelay = 2000;
       let stopped = false;
+      currentTwitchChannel = channel;
 
       function connect() {
         if (stopped) return;
-        setStatus("twitch", "connecting");
+        setStatus("twitch", "connecting", "подключение к #" + channel + "…");
         const ws = new WebSocket("wss://irc-ws.chat.twitch.tv:443");
         twitchSocket = ws;
         ws.onopen = () => {
@@ -800,7 +851,6 @@
           ws.send("NICK justinfan" + Math.floor(10000 + Math.random() * 80000));
           ws.send("JOIN #" + channel);
           retryDelay = 2000;
-          setStatus("twitch", "connected");
         };
         ws.onmessage = (event) => {
           event.data
@@ -810,12 +860,12 @@
         };
         ws.onclose = () => {
           if (stopped) return;
-          setStatus("twitch", "connecting");
+          setStatus("twitch", "connecting", "переподключение…");
           setTimeout(connect, retryDelay);
           retryDelay = Math.min(retryDelay * 1.5, 30000);
         };
         ws.onerror = () => {
-          setStatus("twitch", "error");
+          setStatus("twitch", "error", "нет связи с чатом Twitch (проверь интернет/файрвол)");
           try { ws.close(); } catch (_) { /* игнорируем */ }
         };
       }
@@ -912,12 +962,18 @@
     }
 
     // --- Способ 1: бесплатный поиск через Rust (только внутри FoxFire Hub) ---
-    function hasTauri() {
-      return !!(window.__TAURI__ && window.__TAURI__.tauri && window.__TAURI__.tauri.invoke);
+    // Tauri v1: __TAURI__.tauri.invoke, Tauri v2: __TAURI__.core.invoke (или __TAURI_INTERNALS__).
+    function tauriInvoke() {
+      const t = window.__TAURI__;
+      if (t && t.tauri && t.tauri.invoke) return t.tauri.invoke.bind(t.tauri);
+      if (t && t.core && t.core.invoke) return t.core.invoke.bind(t.core);
+      if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) return window.__TAURI_INTERNALS__.invoke.bind(window.__TAURI_INTERNALS__);
+      return null;
     }
+    function hasTauri() { return !!tauriInvoke(); }
     async function findLiveVideoIdViaTauri(channel) {
       try {
-        return await window.__TAURI__.tauri.invoke("resolve_youtube_live_video", { channel });
+        return await tauriInvoke()("resolve_youtube_live_video", { channel });
       } catch (err) {
         console.warn("unified-chat: авто-поиск трансляции через FoxFire Hub не сработал", err);
         return null;
@@ -962,15 +1018,129 @@
       return item && item.id ? item.id.videoId : null;
     }
 
+    // --- Способ 0 (по умолчанию): чтение БЕЗ ключа через Hub ---
+    // Сам YouTube читает Rust-часть Hub (см. hub-patch/youtube_chat.rs), виджет
+    // только спрашивает у неё новые сообщения. Достучаться до Hub можно двумя
+    // путями, оба отдают одинаковый ответ:
+    //  - внутри окна Hub — Tauri-команда yt_chat_poll;
+    //  - в OBS/браузере — по ссылке http://127.0.0.1:ПОРТ/w/unified-chat/index.html
+    //    (локальный сервер Hub): тогда виджет опрашивает /api/yt/poll на том же адресе.
+    // Если открыт как file:// — достучаться некуда, нужен API-ключ или ссылка из Hub.
+    function keylessTransport() {
+      // Открыто с локального сервера Hub (OBS, браузер и окно Hub по http://127.0.0.1) —
+      // спрашиваем сервер напрямую, IPC Tauri для этого не нужен.
+      if (location.protocol === "http:" && /^(127\.0\.0\.1|localhost)$/.test(location.hostname)) {
+        return {
+          name: "local",
+          poll: async (q) => {
+            const url = `${location.origin}/api/yt/poll?channel=${encodeURIComponent(q.channel)}` +
+              `&video=${encodeURIComponent(q.video)}&since=${q.since}`;
+            const res = await fetchWithTimeout(url, 8000);
+            if (!res.ok) throw new Error("локальный сервер Hub ответил " + res.status);
+            return await res.json();
+          },
+        };
+      }
+      if (hasTauri()) {
+        return {
+          name: "tauri",
+          poll: (q) => tauriInvoke()("yt_chat_poll", { channel: q.channel, videoId: q.video, since: q.since }),
+        };
+      }
+      return null;
+    }
+
+    function ytRunsToHtml(runs) {
+      return (runs || []).map((r) => {
+        if (r.emoji && /^https:\/\//i.test(r.emoji)) {
+          return `<img class="unifiedchat-emote" src="${escapeHtml(r.emoji)}" alt="${escapeHtml(r.text || "")}" title="${escapeHtml(r.text || "")}" />`;
+        }
+        return escapeHtml(r.text || "");
+      }).join("");
+    }
+    const YT_ROLE_BADGES = {
+      owner: { icon: "crown", label: "Владелец канала", role: "broadcaster" },
+      moderator: { icon: "shield", label: "Модератор", role: "moderator" },
+      member: { icon: "star", label: "Участник канала", role: "subscriber" },
+      verified: { icon: "check", label: "Подтверждён", role: "partner" },
+    };
+
+    function runKeyless(cfg, transport, stoppedRef, onGiveUp) {
+      let since = 0;
+      let fails = 0;
+      async function tick() {
+        if (stoppedRef.stopped) return;
+        let delay = 1500;
+        try {
+          const r = await transport.poll({
+            channel: (cfg.youtubeChannel || "").trim(),
+            video: (cfg.youtubeVideoIdOverride || "").trim(),
+            since,
+          });
+          if (stoppedRef.stopped) return;
+          fails = 0;
+          if (typeof r.next === "number") since = r.next;
+          if (r.state === "connected") setStatus("youtube", "connected", r.message || "");
+          else if (r.state === "error") setStatus("youtube", "error", r.message || "ошибка чтения чата");
+          else if (r.state === "offline") setStatus("youtube", "idle", r.message || "эфира сейчас нет, жду…");
+          else setStatus("youtube", "connecting", r.message || "ищу трансляцию…");
+          (r.messages || []).forEach((m) => {
+            addMessage({
+              platform: "youtube",
+              author: m.author || "YouTube",
+              color: null,
+              badges: (m.badges || []).map((b) => YT_ROLE_BADGES[b]).filter(Boolean),
+              html: ytRunsToHtml(m.runs),
+              ts: m.ts || Date.now(),
+              superchat: m.superchat || null,
+            });
+          });
+          if (r.state === "error") delay = 5000;
+        } catch (err) {
+          fails++;
+          setStatus("youtube", "error", "нет связи с Hub: " + (err && err.message ? err.message : err));
+          if (fails >= 5 && cfg.youtubeApiKey) {
+            console.warn("unified-chat: чтение без ключа недоступно, перехожу на API-ключ");
+            onGiveUp();
+            return;
+          }
+          delay = 5000;
+        }
+        setTimeout(tick, delay);
+      }
+      tick();
+    }
+
     let youtubeStoppedRef = { stopped: false };
     async function connectYoutube(cfg) {
       youtubeStoppedRef.stopped = true; // останавливаем предыдущую сессию, если была
       const stoppedRef = { stopped: false };
       youtubeStoppedRef = stoppedRef;
 
-      const { youtubeChannel, youtubeApiKey, youtubeVideoIdOverride } = cfg;
-      if (!youtubeApiKey || (!youtubeChannel && !youtubeVideoIdOverride)) { setStatus("youtube", "idle"); return; }
+      if (!cfg.youtubeChannel && !cfg.youtubeVideoIdOverride) { setStatus("youtube", "idle"); return; }
 
+      const wantApi = cfg.youtubeMode === "API-ключ (официально)";
+      const transport = wantApi ? null : keylessTransport();
+
+      if (transport) {
+        runKeyless(cfg, transport, stoppedRef, () => connectYoutubeApi(cfg, stoppedRef));
+        return;
+      }
+      if (!cfg.youtubeApiKey) {
+        setStatus(
+          "youtube", "error",
+          wantApi
+            ? "не указан API-ключ YouTube"
+            : "без ключа чат YouTube читается только через Hub: открой виджет по ссылке из Hub (http://127.0.0.1…) или впиши API-ключ"
+        );
+        return;
+      }
+      connectYoutubeApi(cfg, stoppedRef);
+    }
+
+    // --- Официальный способ: YouTube Data API v3 со своим ключом ---
+    async function connectYoutubeApi(cfg, stoppedRef) {
+      const { youtubeChannel, youtubeApiKey, youtubeVideoIdOverride } = cfg;
       const usingTauri = hasTauri();
 
       async function findVideoId() {
@@ -1061,7 +1231,7 @@
         return;
       }
 
-      if (!cfg.twitchChannel && !(cfg.youtubeChannel || cfg.youtubeVideoIdOverride) && !cfg.youtubeApiKey) {
+      if (!cfg.twitchChannel && !(cfg.youtubeChannel || cfg.youtubeVideoIdOverride)) {
         showEmptyState();
       }
 
@@ -1074,7 +1244,7 @@
     // postMessage от settings.html: живой предпросмотр. connectionKeys —
     // поля, при изменении которых нужно по-настоящему переподключиться
     // (а не просто перекрасить), остальные применяются мгновенно.
-    const CONNECTION_KEYS = ["twitchChannel", "youtubeChannel", "youtubeApiKey", "youtubeVideoIdOverride"];
+    const CONNECTION_KEYS = ["twitchChannel", "youtubeChannel", "youtubeApiKey", "youtubeVideoIdOverride", "youtubeMode"];
     window.addEventListener("message", (event) => {
       const data = event.data;
       if (!data || data.type !== "unifiedchat:config") return;
@@ -1088,38 +1258,105 @@
       }
     });
 
-    // Живое обновление УЖЕ ЗАПУЩЕННОГО окна виджета (кнопка "Запустить"),
-    // когда настройки правят параллельно в другом месте Hub (вкладка
-    // "Загруженное") — без этого окно подхватило бы новые значения только
-    // на следующий перезапуск, потому что query-параметры читаются один раз
-    // при создании окна. Работает через foxfirehub-bridge.js, только внутри
-    // FoxFire Hub — вне его (например, файл вставлен в источник "Браузер" в
-    // OBS) просто ничего не делает, это нормально: OBS-источник и так
-    // пересоздаётся вручную при копировании новой ссылки для OBS.
-    // Важно: подписываемся ТОЛЬКО когда index.html — настоящее верхнеуровневое
-    // окно виджета (isEmbeddedInHub() === false), а не сам себя проверяем через
-    // hasTauri(). settings.html держит свой собственный предпросмотр этого же
-    // index.html во вложенном <iframe> (для демо-режима) — та вложенная копия
-    // ЖИВЁТ внутри Hub и тоже видит window.__TAURI__, но её конфиг уже и так
-    // приходит через postMessage от settings.html (с правильным demo-флагом);
-    // если бы она ЕЩЁ и слушала это Tauri-событие, при правке полей
-    // twitchChannel/youtubeChannel предпросмотр по ошибке пытался бы
-    // взаправду подключиться, даже с включённым чекбоксом "Демо-сообщения".
-    if (window.FoxFireBridge && !window.FoxFireBridge.isEmbeddedInHub()) {
-      window.FoxFireBridge.onLiveConfigUpdate("unified-chat", ({ key, value }) => {
-        const prevValue = config[key];
-        config = { ...config, [key]: value };
-        if (CONNECTION_KEYS.includes(key) && prevValue !== value) {
-          startConnections(config, { demo: false });
-        } else {
-          applyVisualConfig(config);
-        }
+    // === Файл настроек config.js (отдельный конфиг рядом с index.html) ===
+    // Hub сам пишет config.js при каждом изменении настроек. Виджет читает его
+    // при старте и перечитывает каждые 2 секунды — поэтому ссылка в OBS
+    // постоянная, менять её после правки настроек не нужно. Загрузка обычным
+    // <script> (не fetch) — так работает и из file:// в OBS без сервера.
+    // Если config.js нет — работаем по query-параметрам, как раньше.
+    // Предпросмотр внутри settings.html (iframe) config.js не читает: ему
+    // конфиг присылает postMessage.
+    const IS_EMBEDDED = window.parent !== window;
+
+    // Соседний файл рядом с index.html. Внутри Hub адрес страницы —
+    // asset.localhost/<путь целиком в percent-encoding, где "/" это %2F или
+    // %5C>, поэтому обычный относительный URL ("config.js") там НЕ работает:
+    // режем адрес по последнему разделителю любого из этих видов сами.
+    function siblingUrl(name) {
+      const href = location.href.split(/[?#]/)[0];
+      let cut = -1;
+      const re = /%5C|%2F|\//gi;
+      let m;
+      while ((m = re.exec(href))) cut = m.index + m[0].length;
+      return (cut < 0 ? href + "/" : href.slice(0, cut)) + name;
+    }
+
+    function loadConfigFile(bust) {
+      return new Promise((resolve) => {
+        try { delete window.__FOXFIRE_WIDGET_CONFIG__; } catch (_) { window.__FOXFIRE_WIDGET_CONFIG__ = undefined; }
+        const el = document.createElement("script");
+        let done = false;
+        const finish = (val) => { if (done) return; done = true; el.remove(); resolve(val); };
+        el.onload = () => finish(window.__FOXFIRE_WIDGET_CONFIG__ || null);
+        el.onerror = () => finish(null);
+        setTimeout(() => finish(null), 3000);
+        el.src = siblingUrl("config.js") + (bust ? "?t=" + Date.now() : "");
+        document.head.appendChild(el);
       });
     }
 
-    loadThirdPartyEmotesGlobal().finally(() => {
-      startConnections(config, { demo: !config.twitchChannel && !config.youtubeChannel && !config.youtubeVideoIdOverride });
-    });
+    function normalizeFileConfig(raw) {
+      const out = {};
+      Object.keys(DEFAULTS).forEach((key) => {
+        if (!(key in raw)) return;
+        if (typeof DEFAULTS[key] === "boolean") out[key] = readBool(raw[key], DEFAULTS[key]);
+        else if (typeof DEFAULTS[key] === "number") out[key] = readNum(raw[key], DEFAULTS[key]);
+        else out[key] = String(raw[key]);
+      });
+      return out;
+    }
+
+    let lastFileJson = null;
+    async function pollConfigFile() {
+      const raw = await loadConfigFile(true);
+      if (!raw) return;
+      const json = JSON.stringify(raw);
+      if (json === lastFileJson) return;
+      lastFileJson = json;
+      const prev = config;
+      config = { ...DEFAULTS, ...normalizeFileConfig(raw) };
+      if (CONNECTION_KEYS.some((k) => prev[k] !== config[k])) startConnections(config, { demo: false });
+      else applyVisualConfig(config);
+    }
+
+    (async function bootstrap() {
+      loadThirdPartyEmotesGlobal(); // в фоне: сбой/таймаут эмоутов больше не блокирует запуск
+      if (!IS_EMBEDDED) {
+        const raw = await loadConfigFile(false);
+        if (raw) {
+          lastFileJson = JSON.stringify(raw);
+          config = { ...config, ...normalizeFileConfig(raw) };
+        }
+      }
+      // Демо-сообщения — только в предпросмотре настроек; в реальном окне/OBS
+      // без каналов показываем подсказку "Настройте виджет", а не выдуманный чат.
+      startConnections(config, { demo: IS_EMBEDDED && !config.twitchChannel && !config.youtubeChannel && !config.youtubeVideoIdOverride });
+      if (!IS_EMBEDDED) setInterval(pollConfigFile, 2000);
+      if (!IS_EMBEDDED) subscribeLiveConfig();
+    })();
+
+    // Живые изменения настроек от Hub (Tauri-событие) — для окна, запущенного
+    // кнопкой «Запустить». Работает и без config.js, поэтому режим окна
+    // («Как показывать») подхватывается сразу, даже если Hub не пишет файл.
+    // Встроенная копия без зависимостей: относительный foxfirehub-bridge.js в
+    // asset.localhost не открылся бы (см. siblingUrl).
+    function subscribeLiveConfig() {
+      try {
+        const ev = window.__TAURI__ && window.__TAURI__.event;
+        if (!ev || !ev.listen) return;
+        ev.listen("foxfirehub:config-updated", (e) => {
+          const p = e && e.payload;
+          if (!p || p.widgetId !== "unified-chat" || !(p.key in DEFAULTS)) return;
+          const norm = normalizeFileConfig({ [p.key]: p.value });
+          const prev = config;
+          config = { ...config, ...norm };
+          if (CONNECTION_KEYS.includes(p.key) && prev[p.key] !== config[p.key]) startConnections(config, { demo: false });
+          else applyVisualConfig(config);
+        });
+      } catch (err) {
+        console.warn("unified-chat: не удалось подписаться на живые настройки Hub", err);
+      }
+    }
   </script>
 </body>
 </html>
