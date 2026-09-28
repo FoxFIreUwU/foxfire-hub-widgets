@@ -262,8 +262,8 @@
         "version": "2.1.0",
         "releaseDate": "2026-09-28",
         "downloadUrl": "https://github.com/FoxFIreUwU/foxfire-hub-widgets/releases/download/unified-chat-v2.1.0/unified-chat.zip",
-        "status": "stable",
-        "statusMessage": "",
+        "status": "unavailable",
+        "statusMessage": "В разработке",
         "settingsEntry": "settings.html"
       },
       {
