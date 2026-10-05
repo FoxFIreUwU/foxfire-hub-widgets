@@ -38,8 +38,8 @@
       "version": "1.0.0",
       "releaseDate": "2026-09-25",
       "downloadUrl": "https://github.com/FoxFireUwU/foxfire-hub-widgets/releases/download/stream-clock-v1.0.0/stream-clock.zip",
-      "status": "warning",
-      "statusMessage": "Плагин не запускается, знаем и работаем над этим"
+      "status": "stable",
+      "statusMessage": ""
     }
   ]
 }

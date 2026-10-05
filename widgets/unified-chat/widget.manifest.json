@@ -1,0 +1,317 @@
+{
+  "id": "unified-chat",
+  "name": "Общий чат (Twitch + YouTube)",
+  "author": {
+    "name": "FoxFire Hub Team",
+    "url": "https://github.com/FoxFireUwU"
+  },
+  "rating": 0,
+  "tags": [
+    "OBS",
+    "Chat",
+    "Twitch",
+    "YouTube",
+    "Windows",
+    "Mac",
+    "Linux"
+  ],
+  "shortDescription": "Склеивает чаты Twitch и YouTube в одну ленту — стильное отдельное окно для стримера и лёгкий оверлей для зрителей.",
+  "fullDescription": "Когда стрим идёт одновременно на Twitch и YouTube, сообщения из обоих чатов показываются одной общей лентой, отсортированной по времени — не нужно бегать глазами между двумя окнами.\n\nС версии 2.1.0 у стримера и у зрителей — РАЗНЫЙ интерфейс, не один и тот же виджет: запущенный кнопкой \"Запустить\" внутри самого FoxFire Hub, виджет сам переключается в стилизованное непрозрачное окно с шапкой и индикаторами подключения к Twitch/YouTube — удобно держать открытым вторым монитором. А вставленный ссылкой в источник \"Браузер\" OBS — остаётся лёгким прозрачным оверлеем для зрителей на трансляции. Переключение автоматическое, но при желании можно закрепить любой из двух режимов вручную.\n\nTwitch подключается анонимно (без токена и без входа в аккаунт) — просто впиши логин канала. Для YouTube достаточно один раз указать канал (ссылку, @handle или ID) — внутри FoxFire Hub виджет сам находит текущую трансляцию бесплатно, без ручного копирования Video ID перед каждым эфиром (при запуске как обычный файл в OBS, без FoxFire Hub рядом, доступен резервный способ через официальный YouTube Data API — см. README). С версии 2.3.0 чат YouTube читается без API-ключа: это делает сам Hub (неофициальный способ, YouTube может его изменить), а официальный API-ключ Google остаётся необязательным запасным вариантом — в настройках есть кнопка «Проверить ключ». Чтобы чат работал в OBS, вставляй ссылку из кнопки «Скопировать ссылку для OBS»: Hub раздаёт виджет по постоянному адресу http://127.0.0.1:порт, и она не меняется при правке настроек.\n\nОтдельное окно настроек с живым предпросмотром (сразу видно и анимацию, и тестовые сообщения по кнопке) теперь устроено вкладками: шрифт/текст/тень сообщения (жирный, курсив, подчёркнутый, регистр, межбуквенный интервал, настраиваемая тень), фон карточки (можно вообще убрать, задать свой цвет, прозрачность и размытие в стиле \"стекла\"), единые по размеру и форме бейджи ролей со своим цветом на каждую роль (по умолчанию модератор — синий, подписчик/спонсор — акцентный оранжевый), и каталог из нескольких готовых тем в один клик. Поддержаны сторонние Twitch-эмоуты (7TV, BetterTTV), показ действий модераторов (таймауты/удаление сообщений), суперчаты YouTube подсвечиваются акцентным цветом отдельно. Работать может и с одной площадкой — оставь поле второй пустым.",
+  "previewUrl": "https://raw.githubusercontent.com/FoxFIreUwU/foxfire-hub-widgets/main/widgets/unified-chat/screenshots/1.png",
+  "settingsEntry": "settings.html",
+  "configSchema": {
+    "twitchChannel": {
+      "type": "text",
+      "label": "Логин канала Twitch",
+      "default": ""
+    },
+    "youtubeChannel": {
+      "type": "text",
+      "label": "Канал YouTube (ссылка, @handle или ID канала)",
+      "default": ""
+    },
+    "youtubeApiKey": {
+      "type": "text",
+      "label": "API-ключ YouTube (необязательно — запасной вариант)",
+      "default": ""
+    },
+    "youtubeMode": {
+      "type": "select",
+      "label": "Как читать чат YouTube",
+      "default": "Без ключа (через Hub)",
+      "options": [
+        "Без ключа (через Hub)",
+        "API-ключ (официально)"
+      ]
+    },
+    "youtubeVideoIdOverride": {
+      "type": "text",
+      "label": "Video ID вручную (необязательно, для запасного варианта)",
+      "default": ""
+    },
+    "direction": {
+      "type": "select",
+      "label": "Направление ленты",
+      "default": "Новые снизу",
+      "options": [
+        "Новые снизу",
+        "Новые сверху"
+      ]
+    },
+    "fontFamily": {
+      "type": "select",
+      "label": "Шрифт",
+      "default": "Системный (по умолчанию)",
+      "options": [
+        "Системный (по умолчанию)",
+        "Segoe UI",
+        "Arial",
+        "Verdana",
+        "Georgia",
+        "Comic Sans MS",
+        "Свой шрифт..."
+      ]
+    },
+    "fontFamilyCustom": {
+      "type": "text",
+      "label": "Свой шрифт (если выбрано \"Свой шрифт...\")",
+      "default": ""
+    },
+    "animationStyle": {
+      "type": "select",
+      "label": "Анимация появления сообщений",
+      "default": "Плавно (fade)",
+      "options": [
+        "Плавно (fade)",
+        "Снизу вверх",
+        "Слева",
+        "Без анимации"
+      ]
+    },
+    "scale": {
+      "type": "number",
+      "label": "Общий масштаб (%)",
+      "default": 100
+    },
+    "fontSize": {
+      "type": "number",
+      "label": "Размер шрифта (px)",
+      "default": 18
+    },
+    "messageSpacing": {
+      "type": "number",
+      "label": "Отступ между сообщениями (px)",
+      "default": 6
+    },
+    "cornerRadius": {
+      "type": "number",
+      "label": "Скругление углов карточки (px)",
+      "default": 16
+    },
+    "maxMessages": {
+      "type": "number",
+      "label": "Сколько сообщений держать на экране",
+      "default": 40
+    },
+    "bgOpacity": {
+      "type": "number",
+      "label": "Непрозрачность фона карточки (%)",
+      "default": 55
+    },
+    "showPlatformIcons": {
+      "type": "boolean",
+      "label": "Показывать значок площадки",
+      "default": true
+    },
+    "showBadges": {
+      "type": "boolean",
+      "label": "Показывать бейджи (модератор/VIP и т.д.)",
+      "default": true
+    },
+    "showTimestamps": {
+      "type": "boolean",
+      "label": "Показывать время сообщения",
+      "default": false
+    },
+    "highlightModActions": {
+      "type": "boolean",
+      "label": "Показывать действия модераторов (таймауты, удаление сообщений)",
+      "default": true
+    },
+    "enableThirdPartyEmotes": {
+      "type": "boolean",
+      "label": "Сторонние эмоуты Twitch (7TV, BetterTTV)",
+      "default": true
+    },
+    "textColor": {
+      "type": "color",
+      "label": "Цвет текста сообщений",
+      "default": "#f4f0ea"
+    },
+    "accentColor": {
+      "type": "color",
+      "label": "Акцентный цвет (суперчаты, скролл, рамки)",
+      "default": "#e2820a"
+    },
+    "viewMode": {
+      "type": "select",
+      "label": "Окно виджета",
+      "default": "Авто (по контексту)",
+      "options": [
+        "Авто (по контексту)",
+        "Стример (окно)",
+        "Зритель (OBS)"
+      ]
+    },
+    "enableBackground": {
+      "type": "boolean",
+      "label": "Показывать фон карточки",
+      "default": true
+    },
+    "bgColor": {
+      "type": "color",
+      "label": "Цвет фона карточки",
+      "default": "#1a1512"
+    },
+    "bgBlur": {
+      "type": "number",
+      "label": "Размытие фона (px)",
+      "default": 0
+    },
+    "letterSpacing": {
+      "type": "number",
+      "label": "Расстояние между буквами (px)",
+      "default": 0
+    },
+    "wordSpacing": {
+      "type": "number",
+      "label": "Расстояние между словами (px)",
+      "default": 0
+    },
+    "textBold": {
+      "type": "boolean",
+      "label": "Жирный текст сообщений",
+      "default": false
+    },
+    "textItalic": {
+      "type": "boolean",
+      "label": "Курсив текста сообщений",
+      "default": false
+    },
+    "textUnderline": {
+      "type": "boolean",
+      "label": "Подчёркнутый текст сообщений",
+      "default": false
+    },
+    "textCase": {
+      "type": "select",
+      "label": "Регистр текста",
+      "default": "Обычный",
+      "options": [
+        "Обычный",
+        "ВСЕ ЗАГЛАВНЫЕ",
+        "все строчные"
+      ]
+    },
+    "shadowColor": {
+      "type": "text",
+      "label": "Цвет тени текста (CSS-цвет, можно rgba)",
+      "default": "rgba(0,0,0,0.6)"
+    },
+    "shadowOffsetX": {
+      "type": "number",
+      "label": "Тень текста — смещение по X (px)",
+      "default": 0
+    },
+    "shadowOffsetY": {
+      "type": "number",
+      "label": "Тень текста — смещение по Y (px)",
+      "default": 1
+    },
+    "shadowBlur": {
+      "type": "number",
+      "label": "Тень текста — размытие (px)",
+      "default": 2
+    },
+    "badgeColorBroadcaster": {
+      "type": "color",
+      "label": "Цвет бейджа: стример",
+      "default": "#ffb703"
+    },
+    "badgeColorModerator": {
+      "type": "color",
+      "label": "Цвет бейджа: модератор",
+      "default": "#3ea6ff"
+    },
+    "badgeColorVip": {
+      "type": "color",
+      "label": "Цвет бейджа: VIP",
+      "default": "#c084fc"
+    },
+    "badgeColorSubscriber": {
+      "type": "color",
+      "label": "Цвет бейджа: подписчик/спонсор",
+      "default": "#e2820a"
+    },
+    "badgeColorStaff": {
+      "type": "color",
+      "label": "Цвет бейджа: staff/admin",
+      "default": "#ef4444"
+    },
+    "badgeColorPartner": {
+      "type": "color",
+      "label": "Цвет бейджа: партнёр",
+      "default": "#22c55e"
+    }
+  },
+  "minAppVersion": "0.1.10",
+  "versions": [
+    {
+      "version": "2.3.1",
+      "releaseDate": "2026-09-30",
+      "downloadUrl": "https://github.com/FoxFIreUwU/foxfire-hub-widgets/releases/download/unified-chat-v2.3.1/unified-chat.zip",
+      "status": "stable",
+      "statusMessage": "",
+      "settingsEntry": "settings.html"
+    },
+    {
+      "version": "2.1.0",
+      "releaseDate": "2026-09-28",
+      "downloadUrl": "https://github.com/FoxFIreUwU/foxfire-hub-widgets/releases/download/unified-chat-v2.1.0/unified-chat.zip",
+      "status": "warning",
+      "statusMessage": "Устаревшая версия: битая ссылка для OBS (asset.localhost), настройки могли не сохраняться, нет статуса подключения к Twitch. Рекомендуем обновиться до 2.2.0.",
+      "settingsEntry": "settings.html"
+    },
+    {
+      "version": "2.2.0",
+      "releaseDate": "2026-09-28",
+      "downloadUrl": "https://github.com/FoxFIreUwU/foxfire-hub-widgets/releases/download/unified-chat-v2.2.0/unified-chat.zip",
+      "status": "warning",
+      "statusMessage": "Устаревшая версия: чат YouTube только с API-ключом, ссылка для OBS вида file://. Рекомендуем обновиться до 2.3.0 (нужен Hub с локальным сервером — см. HUB_INTEGRATION.md).",
+      "settingsEntry": "settings.html"
+    },
+    {
+      "version": "2.3.0",
+      "releaseDate": "2026-09-28",
+      "downloadUrl": "https://github.com/FoxFIreUwU/foxfire-hub-widgets/releases/download/unified-chat-v2.3.0/unified-chat.zip",
+      "status": "warning",
+      "statusMessage": "Устаревшая версия: окно стримера могло открываться как оверлей, в OBS чёрная заливка под сообщениями, ссылка на asset.localhost. Рекомендуем обновиться до 2.3.1.",
+      "settingsEntry": "settings.html"
+    },
+    {
+      "version": "2.0.0",
+      "releaseDate": "2026-09-27",
+      "downloadUrl": "https://github.com/FoxFIreUwU/foxfire-hub-widgets/releases/download/unified-chat-v2.0.0/unified-chat.zip",
+      "status": "warning",
+      "statusMessage": "Устаревшая версия: у стримера открывался тот же прозрачный оверлей, что и у зрителей, бейджи были вразнобой по размеру, фон нельзя было убрать/размыть. Рекомендуем обновиться до 2.1.0.",
+      "settingsEntry": "settings.html"
+    },
+    {
+      "version": "1.0.0",
+      "releaseDate": "2026-09-26",
+      "downloadUrl": "https://github.com/FoxFIreUwU/foxfire-hub-widgets/releases/download/unified-chat-v1.0.0/unified-chat.zip",
+      "status": "warning",
+      "statusMessage": "Устаревшая версия: Video ID YouTube нужно было вводить вручную на каждый эфир. Рекомендуем обновиться до 2.0.0."
+    }
+  ]
+}

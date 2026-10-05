@@ -1,0 +1,116 @@
+{
+  "id": "streamassist-chat",
+  "name": "Чат StreamAssist (Twitch + YouTube)",
+  "author": {
+    "name": "FoxFire Hub Team",
+    "url": "https://github.com/FoxFireUwU"
+  },
+  "rating": 0,
+  "tags": [
+    "OBS",
+    "Chat",
+    "Twitch",
+    "YouTube",
+    "Windows",
+    "Mac",
+    "Linux"
+  ],
+  "shortDescription": "Общий чат Twitch и YouTube в оформлении StreamAssist: готовые стили, подробные настройки и прозрачный оверлей для OBS.",
+  "fullDescription": "Чат из программы StreamAssist, вынесенный в отдельный виджет FoxFire Hub. Склеивает чаты Twitch и YouTube в одну ленту, отсортированную по времени, и рисует её тем же кодом, что и StreamAssist, — поэтому оформление можно один в один переносить между программой и Hub.\n\nОформление настраивается подробно: пять готовых стилей («Тёмные пузыри», «Стеклянная капсула», «Градиентная капсула», «Карточка», «Классика без фона»), вкладки «Общие» и «Расширенные» с поиском по настройкам, заливка и градиент, рамка, углы по отдельности, тень, подсветка внутри, значок площадки или аватар, значки ролей (картинки для стримера и модератора), шрифты, обводка и тень текста, платные сообщения YouTube, действия модераторов, анимации появления. Стиль можно сохранить как текст и вставить в StreamAssist (и обратно).\n\nTwitch подключается анонимно, без входа в аккаунт: достаточно логина канала. Поддержаны смайлы Twitch и глобальные наборы 7TV и BetterTTV. YouTube читается без ключа через Hub (неофициальный способ — YouTube может его изменить; нужен Hub с локальным сервером) или официально по вашему API-ключу Google.\n\nДля OBS нажмите «Скопировать ссылку для OBS» в настройках: ссылка постоянная, настройки подхватываются сами, Hub должен быть запущен, пока идёт стрим. Это отдельный виджет, он не заменяет «Общий чат (Twitch + YouTube)» и работает независимо от него.",
+  "previewUrl": "https://raw.githubusercontent.com/FoxFIreUwU/foxfire-hub-widgets/main/widgets/streamassist-chat/screenshots/01.png",
+  "settingsEntry": "settings.html",
+  "configSchema": {
+    "twitchChannel": {
+      "type": "text",
+      "label": "Twitch: логин канала или ссылка",
+      "default": "",
+      "group": "Подключение"
+    },
+    "youtubeChannel": {
+      "type": "text",
+      "label": "YouTube: канал (ссылка, @имя или ID)",
+      "default": "",
+      "group": "Подключение"
+    },
+    "youtubeMode": {
+      "type": "select",
+      "label": "Как читать чат YouTube",
+      "default": "Без ключа (через Hub)",
+      "options": [
+        "Без ключа (через Hub)",
+        "API-ключ (официально)"
+      ],
+      "group": "Подключение"
+    },
+    "youtubeApiKey": {
+      "type": "text",
+      "label": "API-ключ YouTube (необязательно — запасной вариант)",
+      "default": "",
+      "group": "Подключение"
+    },
+    "youtubeVideoIdOverride": {
+      "type": "text",
+      "label": "Трансляция YouTube вручную (ссылка или ID)",
+      "default": "",
+      "group": "Подключение"
+    },
+    "thirdPartyEmotes": {
+      "type": "boolean",
+      "label": "Сторонние смайлы (7TV, BetterTTV)",
+      "default": true,
+      "group": "Подключение"
+    },
+    "layout": {
+      "type": "select",
+      "label": "Как выглядят сообщения",
+      "default": "bubbles",
+      "options": [
+        "bubbles",
+        "panel",
+        "plain"
+      ],
+      "group": "Оформление"
+    },
+    "scale": {
+      "type": "number",
+      "label": "Масштаб виджета (%)",
+      "default": 100,
+      "group": "Оформление"
+    },
+    "fs": {
+      "type": "number",
+      "label": "Размер текста (px)",
+      "default": 18,
+      "group": "Оформление"
+    },
+    "textColor": {
+      "type": "color",
+      "label": "Цвет текста",
+      "default": "#ffffff",
+      "group": "Оформление"
+    },
+    "ac": {
+      "type": "color",
+      "label": "Цвет акцента",
+      "default": "#ff7a1a",
+      "group": "Оформление"
+    },
+    "max": {
+      "type": "number",
+      "label": "Сколько сообщений на экране",
+      "default": 12,
+      "group": "Оформление"
+    }
+  },
+  "minAppVersion": "0.1.10",
+  "versions": [
+    {
+      "version": "1.0.0",
+      "releaseDate": "2026-10-05",
+      "downloadUrl": "https://github.com/FoxFIreUwU/foxfire-hub-widgets/releases/download/streamassist-chat-v1.0.0/streamassist-chat.zip",
+      "status": "stable",
+      "statusMessage": "",
+      "settingsEntry": "settings.html"
+    }
+  ]
+}

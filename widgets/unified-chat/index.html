@@ -1,0 +1,1362 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<title>Общий чат (Twitch + YouTube) — FoxFire Hub</title>
+<style>
+  /* Все классы этого виджета начинаются с "unifiedchat-", чтобы не конфликтовать
+     со стилями FoxFire Hub или других виджетов (SYSTEM_WIDGET_STYLE.md, раздел 6). */
+
+  :root {
+    --unifiedchat-accent: #e2820a;
+    --unifiedchat-text: #f4f0ea;
+    --unifiedchat-scale: 1;
+    --unifiedchat-radius: 16px;
+    --unifiedchat-gap: 6px;
+    --unifiedchat-font: "Segoe UI", "Inter", -apple-system, sans-serif;
+    --unifiedchat-letter-spacing: 0px;
+    --unifiedchat-word-spacing: 0px;
+    --unifiedchat-bg-color: 26, 21, 18; /* rgb-компоненты фона карточки, без alpha */
+    --unifiedchat-bg-alpha: 0.55;
+    --unifiedchat-bg-blur: 0px;
+    --unifiedchat-shadow: none;
+    /* Цвета бейджей по ролям — зависят от площадки/темы, пользователь может
+       переопределить каждый в настройках (раздел "Роли и бейджи"). */
+    --unifiedchat-role-broadcaster: #ffb703;
+    --unifiedchat-role-moderator: #3ea6ff;
+    --unifiedchat-role-vip: #c084fc;
+    --unifiedchat-role-subscriber: #e2820a;
+    --unifiedchat-role-staff: #ef4444;
+    --unifiedchat-role-partner: #22c55e;
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: transparent; /* прозрачный фон снаружи — источник "Браузер" в OBS покажет только карточку чата */
+    font-family: var(--unifiedchat-font);
+  }
+
+  /* === Режим "Стример" ===============================================
+     Когда виджет запущен внутри самого FoxFire Hub (кнопка "Запустить"),
+     а не как файл в источнике OBS — показываем стилизованное окно-приложение
+     вместо голого прозрачного оверлея: непрозрачный фон, шапка с названием
+     и статусом подключения к площадкам. Переключается классом на <body>,
+     см. resolveViewMode() в скрипте ниже. Палитра — фирменная FoxFire
+     (SYSTEM_MAIN_APP.md): #0d0c0f фон, #1a1512 карточки, #e2820a акцент. */
+  body.unifiedchat-mode-streamer {
+    background: radial-gradient(circle at 15% -10%, rgba(226, 130, 10, 0.10), transparent 45%), #0d0c0f;
+  }
+
+  .unifiedchat-header {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 14px;
+    margin-bottom: 8px;
+    border-radius: 12px;
+    background: rgba(26, 21, 18, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
+  }
+  body.unifiedchat-mode-streamer .unifiedchat-header { display: flex; }
+  .unifiedchat-header-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #f4f0ea;
+  }
+  .unifiedchat-header-title .unifiedchat-flame { color: var(--unifiedchat-accent); }
+  .unifiedchat-header-status { display: flex; align-items: center; gap: 12px; }
+  .unifiedchat-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    color: #a89a8c;
+  }
+  .unifiedchat-status-pill svg { width: 14px; height: 14px; }
+  .unifiedchat-status-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #5a5148;
+    box-shadow: 0 0 0 rgba(0,0,0,0);
+    transition: background 0.2s, box-shadow 0.2s;
+  }
+  .unifiedchat-status-text { display: none; font-size: 10.5px; opacity: 0.75; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  body.unifiedchat-mode-streamer .unifiedchat-status-text { display: inline; }
+  .unifiedchat-status-dot--connected { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+  .unifiedchat-status-dot--connecting { background: #eab308; box-shadow: 0 0 6px #eab308; }
+  .unifiedchat-status-dot--error { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
+
+  .unifiedchat-root {
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 10px;
+    zoom: var(--unifiedchat-scale);
+  }
+  /* В режиме стримера окну удобнее чуть больше "воздуха" по бокам — это чисто
+     стилистическая разница, ширина/высота всё равно берутся из окна/OBS. */
+  body.unifiedchat-mode-streamer .unifiedchat-root { padding: 14px; }
+
+  .unifiedchat-feed {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-end;
+    gap: var(--unifiedchat-gap);
+    overflow: hidden auto;
+    padding: 4px;
+    /* Раньше цвет/прозрачность/размытие "карточки" ошибочно вешались СЮДА —
+       на весь контейнер ленты, поэтому все сообщения сливались в один общий
+       блок вместо отдельных плавающих карточек одна под другой (как в
+       референсе интерфейса). Сама лента теперь всегда прозрачная — фон
+       живёт на каждом сообщении отдельно, см. .unifiedchat-msg ниже. */
+    background: transparent;
+  }
+
+  .unifiedchat-feed::-webkit-scrollbar { width: 6px; }
+  .unifiedchat-feed::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--unifiedchat-accent) 35%, transparent); border-radius: 3px; }
+
+  .unifiedchat-empty {
+    margin: auto;
+    text-align: center;
+    color: #a89a8c;
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 12px;
+  }
+
+  /* === Карточка одного сообщения ======================================
+     Это и есть "карточка", которую настраивает раздел "Фон карточки" в
+     settings.html: цвет/прозрачность/размытие/скругление — каждое
+     сообщение своим отдельным плавающим блоком, не общий контейнер.
+     Ширина — по содержимому (не на всю ширину ленты), сверху лёгкая тень,
+     чтобы карточка визуально "лежала" поверх трансляции. Внутри — две
+     строки: шапка (иконка площадки + бейджи + имя) и сам текст ниже. */
+  .unifiedchat-msg {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    max-width: 92%;
+    width: fit-content;
+    padding: 6px 10px;
+    border-radius: var(--unifiedchat-radius);
+    background: rgba(var(--unifiedchat-bg-color), var(--unifiedchat-bg-alpha));
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
+    word-break: break-word;
+  }
+  /* Размытие фона ("стекло") включается ТОЛЬКО классом .unifiedchat-glass и
+     только в окне стримера. В OBS (CEF, прозрачная страница) любой
+     backdrop-filter — даже blur(0px) — рисует за сообщениями чёрный
+     прямоугольник, а размывать там всё равно нечего: под чатом нет фона
+     страницы, только видео трансляции. Поэтому в режиме зрителя его нет. */
+  .unifiedchat-feed.unifiedchat-glass .unifiedchat-msg {
+    backdrop-filter: blur(var(--unifiedchat-bg-blur));
+    -webkit-backdrop-filter: blur(var(--unifiedchat-bg-blur));
+  }
+  /* enableBackground=false — убирает фон/тень карточки, оставляя только
+     сами сообщения (класс вешается на ленту, см. applyVisualConfig). */
+  .unifiedchat-feed.unifiedchat-no-bg .unifiedchat-msg {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+  }
+
+  /* Шапка сообщения: иконка площадки + бейджи + имя, всегда в одну строку. */
+  .unifiedchat-msg-head {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 100%;
+  }
+
+  /* === Анимации появления сообщения — управляются классом на корне ленты,
+     см. applyConfig() → animationStyle. Заданы все варианты сразу, включается
+     только один через .unifiedchat-anim-* на .unifiedchat-feed. === */
+  .unifiedchat-anim-fade .unifiedchat-msg { animation: unifiedchat-in-fade 0.2s ease-out; }
+  .unifiedchat-anim-up .unifiedchat-msg { animation: unifiedchat-in-up 0.22s cubic-bezier(.2,.8,.3,1); }
+  .unifiedchat-anim-left .unifiedchat-msg { animation: unifiedchat-in-left 0.22s cubic-bezier(.2,.8,.3,1); }
+  .unifiedchat-anim-none .unifiedchat-msg { animation: none; }
+
+  @keyframes unifiedchat-in-fade { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes unifiedchat-in-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes unifiedchat-in-left { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: translateX(0); } }
+
+  .unifiedchat-msg--super {
+    border-left: 3px solid var(--unifiedchat-accent);
+    background: color-mix(in srgb, var(--unifiedchat-accent) 22%, rgba(var(--unifiedchat-bg-color), var(--unifiedchat-bg-alpha)));
+    box-shadow: 0 0 14px color-mix(in srgb, var(--unifiedchat-accent) 35%, transparent);
+  }
+
+  .unifiedchat-msg--system {
+    opacity: 0.8;
+    font-style: italic;
+    font-size: 0.9em;
+    background: rgba(0, 0, 0, 0.35);
+    box-shadow: none;
+  }
+
+  /* Раньше значок площадки был "голой" обводкой без заливки (SVG-иконка
+     телевизора stroke-only) — на маленьком размере в реальном чате это
+     читалось как пустой чекбокс. Теперь у него, как и у бейджей роли, есть
+     собственный закрашенный кружок-подложка, чтобы он не терялся и не
+     путался с чекбоксом. */
+  .unifiedchat-platform {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 1.5em;
+    height: 1.5em;
+    line-height: 1;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.12);
+    color: #f4f0ea;
+  }
+  .unifiedchat-platform svg { width: 0.85em; height: 0.85em; display: block; }
+  .unifiedchat-time { font-size: 0.75em; color: #a89a8c; font-variant-numeric: tabular-nums; flex: none; }
+
+  /* === Бейджи ролей — единый формат ===================================
+     Раньше это были голые SVG-иконки вразнобой по размеру. Теперь —
+     одинаковые по форме и размеру "чипы" с мягкой подсветкой цвета роли
+     (площадка не важна: модератор Twitch и модератор YouTube выглядят
+     одинаково), цвет каждой роли настраивается отдельно. */
+  .unifiedchat-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    width: 1.5em;
+    height: 1.5em;
+    border-radius: 50%;
+    flex: none;
+  }
+  .unifiedchat-badge svg { width: 0.9em; height: 0.9em; display: block; }
+  .unifiedchat-badge--broadcaster { background: color-mix(in srgb, var(--unifiedchat-role-broadcaster) 20%, transparent); color: var(--unifiedchat-role-broadcaster); }
+  .unifiedchat-badge--moderator   { background: color-mix(in srgb, var(--unifiedchat-role-moderator) 20%, transparent);   color: var(--unifiedchat-role-moderator); }
+  .unifiedchat-badge--vip         { background: color-mix(in srgb, var(--unifiedchat-role-vip) 20%, transparent);        color: var(--unifiedchat-role-vip); }
+  .unifiedchat-badge--subscriber  { background: color-mix(in srgb, var(--unifiedchat-role-subscriber) 20%, transparent); color: var(--unifiedchat-role-subscriber); }
+  .unifiedchat-badge--staff       { background: color-mix(in srgb, var(--unifiedchat-role-staff) 20%, transparent);      color: var(--unifiedchat-role-staff); }
+  .unifiedchat-badge--partner     { background: color-mix(in srgb, var(--unifiedchat-role-partner) 20%, transparent);    color: var(--unifiedchat-role-partner); }
+
+  .unifiedchat-author { font-weight: 700; white-space: nowrap; }
+  /* ":" после имени больше не нужен — имя теперь на отдельной строке от
+     текста сообщения (как в референсе интерфейса), сам разделитель прячем,
+     но не удаляем из разметки, чтобы ничего не пришлось трогать в JS. */
+  .unifiedchat-sep { display: none; }
+
+  .unifiedchat-text {
+    display: block;
+    width: 100%;
+    color: var(--unifiedchat-text);
+    letter-spacing: var(--unifiedchat-letter-spacing);
+    word-spacing: var(--unifiedchat-word-spacing);
+    text-shadow: var(--unifiedchat-shadow);
+  }
+  /* Системные сообщения (таймауты/баны/очистка чата) остаются одной строкой,
+     без разделения на "шапку" и "текст". */
+  .unifiedchat-msg--system .unifiedchat-text { display: inline; }
+  /* Классы регистра/начертания вешаются на саму ленту (.unifiedchat-feed),
+     не на каждое сообщение — так изменения в настройках применяются сразу
+     ко всем уже отрисованным сообщениям, без перерисовки. */
+  .unifiedchat-feed.unifiedchat-text--bold .unifiedchat-text { font-weight: 700; }
+  .unifiedchat-feed.unifiedchat-text--italic .unifiedchat-text { font-style: italic; }
+  .unifiedchat-feed.unifiedchat-text--underline .unifiedchat-text { text-decoration: underline; }
+  .unifiedchat-feed.unifiedchat-text--upper .unifiedchat-text { text-transform: uppercase; }
+  .unifiedchat-feed.unifiedchat-text--lower .unifiedchat-text { text-transform: lowercase; }
+  .unifiedchat-text img.unifiedchat-emote {
+    height: 1.5em;
+    vertical-align: middle;
+    margin: 0 1px;
+  }
+
+  .unifiedchat-super-amount {
+    display: block;
+    align-self: flex-end;
+    margin-top: 2px;
+    font-weight: 700;
+    color: var(--unifiedchat-accent);
+    font-size: 0.85em;
+  }
+</style>
+</head>
+<body>
+  <div class="unifiedchat-root">
+    <div class="unifiedchat-header" id="unifiedchat-header">
+      <div class="unifiedchat-header-title"><span class="unifiedchat-flame">🔥</span> Общий чат</div>
+      <div class="unifiedchat-header-status">
+        <span class="unifiedchat-status-pill" id="unifiedchat-status-twitch">
+          <span class="unifiedchat-status-dot" id="unifiedchat-dot-twitch"></span> Twitch <span class="unifiedchat-status-text" id="unifiedchat-txt-twitch"></span>
+        </span>
+        <span class="unifiedchat-status-pill" id="unifiedchat-status-youtube">
+          <span class="unifiedchat-status-dot" id="unifiedchat-dot-youtube"></span> YouTube <span class="unifiedchat-status-text" id="unifiedchat-txt-youtube"></span>
+        </span>
+      </div>
+    </div>
+    <div class="unifiedchat-feed" id="unifiedchat-feed"></div>
+  </div>
+
+  <script>
+    // === SVG-иконки бейджей и площадок ===============================
+    // Свои минималистичные глифы (не логотипы Twitch/YouTube — просто
+    // узнаваемые нейтральные значки), чтобы не тащить растровые файлы и
+    // чтобы их было легко перекрашивать через currentColor.
+    const ICONS = {
+      twitchPlatform:
+        '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 2l-2 4v14h6v2h4l2-2h5l3-3V2H4zm16 12l-2 2h-5l-2 2v-2H7V4h13v10z"/><path d="M10 6h2v5h-2zM15 6h2v5h-2z"/></svg>',
+      youtubePlatform:
+        '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="5" width="18" height="14" rx="4"/><path d="M10 9l6 3-6 3V9z" fill="#1a1512"/></svg>',
+      crown: // стример / владелец канала
+        '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 8l4 3 5-6 5 6 4-3-2 10H5L3 8z"/></svg>',
+      shield: // модератор
+        '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l7 3v6c0 5-3.4 8.5-7 11-3.6-2.5-7-6-7-11V5l7-3z"/></svg>',
+      gem: // VIP
+        '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 9l4-6h10l4 6-9 12L3 9z"/></svg>',
+      star: // подписчик / спонсор
+        '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3 6.5 7 .9-5.2 4.9 1.4 7-6.2-3.6-6.2 3.6 1.4-7L2 9.4l7-.9L12 2z"/></svg>',
+      trophy: // фаундер
+        '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4h10v3a5 5 0 0 1-5 5 5 5 0 0 1-5-5V4z"/><path d="M7 5H4a3 3 0 0 0 3 4M17 5h3a3 3 0 0 1-3 4"/><path d="M12 12v4M8 20h8l-1-3H9l-1 3z"/></svg>',
+      check: // партнёр / подтверждён
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="9" fill="currentColor" stroke="none"/><path d="M8 12.5l2.6 2.6L16 9.5" stroke="#1a1512"/></svg>',
+      wrench: // staff / admin
+        '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2-2 2.6-2.6z"/></svg>',
+    };
+    function iconSpan(cls, key, title) {
+      return `<span class="${cls}" title="${escapeHtml(title)}">${ICONS[key] || ""}</span>`;
+    }
+    // Бейдж роли — единый "чип" (см. CSS .unifiedchat-badge--*), цвет берётся
+    // из роли (не из площадки), чтобы модератор Twitch и модератор YouTube
+    // выглядели одинаково. role может отсутствовать — тогда рисуем нейтрально.
+    function badgeSpan(badge) {
+      const roleClass = badge.role ? ` unifiedchat-badge--${badge.role}` : "";
+      return `<span class="unifiedchat-badge${roleClass}" title="${escapeHtml(badge.label || "")}">${ICONS[badge.icon] || ""}</span>`;
+    }
+
+    // === Настройки виджета ============================================
+    // Базовые значения приходят как query-параметры index.html при первом
+    // открытии (SYSTEM_WIDGET_STYLE.md, раздел 8б) — так виджет продолжает
+    // работать как обычный "Браузер"-источник в OBS. Дополнительно виджет
+    // слушает postMessage с {type:"unifiedchat:config", config} — это нужно
+    // окну настроек (settings.html) для живого предпросмотра без
+    // перезагрузки страницы на каждое изменение. Если виджет открыт не
+    // изнутри settings.html, postMessage просто никогда не придёт и всё
+    // работает как раньше, через query-параметры.
+    const DEFAULTS = {
+      twitchChannel: "",
+      youtubeChannel: "",
+      youtubeApiKey: "",
+      youtubeVideoIdOverride: "",
+      // Как читать чат YouTube: без ключа (через Hub) или официально по API-ключу.
+      youtubeMode: "Без ключа (через Hub)",
+      direction: "Новые снизу",
+      fontFamily: "Системный (по умолчанию)",
+      fontFamilyCustom: "",
+      animationStyle: "Плавно (fade)",
+      scale: 100,
+      fontSize: 18,
+      messageSpacing: 6,
+      cornerRadius: 16,
+      maxMessages: 40,
+      bgOpacity: 55,
+      showPlatformIcons: true,
+      showBadges: true,
+      showTimestamps: false,
+      highlightModActions: true,
+      enableThirdPartyEmotes: true,
+      textColor: "#f4f0ea",
+      accentColor: "#e2820a",
+      // Режим окна: "Авто" сам решает по контексту (внутри FoxFire Hub —
+      // стилизованное окно для стримера, как файл в OBS/браузере — обычный
+      // прозрачный оверлей); можно закрепить явно.
+      viewMode: "Авто (по контексту)",
+      // Фон карточки: можно убрать совсем, задать свой цвет и размыть его
+      // (эффект "стекла"), в дополнение к прозрачности и скруглению выше.
+      enableBackground: true,
+      bgColor: "#1a1512",
+      bgBlur: 0,
+      // Текст сообщения: начертание, регистр, расстояние между буквами и
+      // словами, тень (набор ровно как в примерах настроек).
+      letterSpacing: 0,
+      wordSpacing: 0,
+      textBold: false,
+      textItalic: false,
+      textUnderline: false,
+      textCase: "Обычный",
+      shadowColor: "rgba(0,0,0,0.6)",
+      shadowOffsetX: 0,
+      shadowOffsetY: 1,
+      shadowBlur: 2,
+      // Цвета ролей/бейджей — по умолчанию модераторы синие, спонсоры/подписчики
+      // оранжевые (цвет площадки-акцент), но всё это можно перекрасить.
+      badgeColorBroadcaster: "#ffb703",
+      badgeColorModerator: "#3ea6ff",
+      badgeColorVip: "#c084fc",
+      badgeColorSubscriber: "#e2820a",
+      badgeColorStaff: "#ef4444",
+      badgeColorPartner: "#22c55e",
+    };
+
+    function readBool(v, fallback) {
+      if (v === undefined || v === null) return fallback;
+      return v === true || v === "true";
+    }
+    function readNum(v, fallback) {
+      const n = Number.parseFloat(v);
+      return Number.isFinite(n) ? n : fallback;
+    }
+
+    function configFromParams() {
+      const params = new URLSearchParams(window.location.search);
+      const cfg = { ...DEFAULTS };
+      Object.keys(DEFAULTS).forEach((key) => {
+        if (!params.has(key)) return;
+        const raw = params.get(key);
+        if (typeof DEFAULTS[key] === "boolean") cfg[key] = readBool(raw, DEFAULTS[key]);
+        else if (typeof DEFAULTS[key] === "number") cfg[key] = readNum(raw, DEFAULTS[key]);
+        else cfg[key] = raw;
+      });
+      return cfg;
+    }
+
+    let config = configFromParams();
+    const feed = document.getElementById("unifiedchat-feed");
+
+    // === Статус подключения в шапке режима "Стример" =====================
+    // Просто цветная точка + подпись: серая — не настроено/не подключено,
+    // жёлтая — идёт попытка подключения, зелёная — подключено, красная —
+    // ошибка. В режиме "Зритель" (OBS) шапка скрыта и это ни на что не влияет.
+    const STATUS_DOT_CLASS = {
+      idle: "",
+      connecting: "unifiedchat-status-dot--connecting",
+      connected: "unifiedchat-status-dot--connected",
+      error: "unifiedchat-status-dot--error",
+    };
+    function setStatus(platform, state, text) {
+      const dot = document.getElementById("unifiedchat-dot-" + platform);
+      if (dot) dot.className = "unifiedchat-status-dot " + (STATUS_DOT_CLASS[state] || "");
+      const txt = document.getElementById("unifiedchat-txt-" + platform);
+      if (txt) txt.textContent = text || "";
+      if (state === "error") console.warn("unified-chat [" + platform + "]:", text || "ошибка");
+    }
+
+    const FONT_STACKS = {
+      "Системный (по умолчанию)": '"Segoe UI", "Inter", -apple-system, sans-serif',
+      "Segoe UI": '"Segoe UI", sans-serif',
+      "Arial": 'Arial, sans-serif',
+      "Verdana": 'Verdana, sans-serif',
+      "Georgia": 'Georgia, serif',
+      "Comic Sans MS": '"Comic Sans MS", cursive',
+    };
+    function resolveFontStack(cfg) {
+      if (cfg.fontFamily === "Свой шрифт..." && cfg.fontFamilyCustom.trim()) {
+        // Пользовательский шрифт с ПК — обязательно с системным fallback,
+        // на случай если у зрителя (в OBS-источнике на другом ПК) этого
+        // шрифта нет (SYSTEM_WIDGET_STYLE.md — виджет не может ничего
+        // подгрузить, кроме своих файлов).
+        return `"${cfg.fontFamilyCustom.trim()}", "Segoe UI", sans-serif`;
+      }
+      return FONT_STACKS[cfg.fontFamily] || FONT_STACKS["Системный (по умолчанию)"];
+    }
+
+    const ANIM_CLASS = {
+      "Плавно (fade)": "unifiedchat-anim-fade",
+      "Снизу вверх": "unifiedchat-anim-up",
+      "Слева": "unifiedchat-anim-left",
+      "Без анимации": "unifiedchat-anim-none",
+    };
+
+    // Применяет ту часть конфига, которая не требует переподключения к
+    // чатам (визуальные настройки) — вызывается и при старте, и на каждое
+    // сообщение postMessage из окна настроек, чтобы предпросмотр обновлялся
+    // мгновенно, без перезапуска соединений.
+    // Внутри FoxFire Hub (кнопка "Запустить") доступен window.__TAURI__ — по
+    // этому же признаку виджет ниже выбирает бесплатный способ поиска
+    // YouTube-трансляции. Используем его и для "Авто"-режима окна: как файл в
+    // OBS/браузере (без Hub рядом) __TAURI__ нет → обычный прозрачный оверлей.
+    // Порядок решения:
+    //  1) ?view=obs в адресе — это ссылка для OBS, ВСЕГДА зритель (иначе общий
+    //     config.js с viewMode="Стример (окно)" превращал бы OBS в непрозрачное окно);
+    //  2) явный выбор в настройках («Стример (окно)» / «Зритель (OBS)»);
+    //  3) «Авто»: внутри Hub (Tauri, asset/tauri-адрес или вложенный предпросмотр) —
+    //     стример, http://127.0.0.1 / file:// / обычный браузер — зритель.
+    function isHubContext() {
+      if (hasTauri()) return true;
+      try { if (window.__TAURI_INTERNALS__ || window.__TAURI__) return true; } catch (_) {}
+      const h = location.hostname, pr = location.protocol;
+      if (/^(asset|tauri)\.localhost$/i.test(h) || pr === "asset:" || pr === "tauri:") return true;
+      if (window.parent !== window && location.protocol !== "http:" && location.protocol !== "https:") return true; // srcdoc-предпросмотр
+      return false;
+    }
+    function resolveViewMode(cfg) {
+      const forced = new URLSearchParams(location.search).get("view");
+      if (forced === "obs") return "viewer";
+      if (cfg.viewMode === "Стример (окно)") return "streamer";
+      if (cfg.viewMode === "Зритель (OBS)") return "viewer";
+      return forced === "hub" || isHubContext() ? "streamer" : "viewer";
+    }
+
+    function hexToRgbList(hex) {
+      const m = /^#?([0-9a-f]{6})$/i.exec((hex || "").trim());
+      if (!m) return "26, 21, 18";
+      const n = parseInt(m[1], 16);
+      return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
+    }
+
+    const CASE_CLASS = { "ВСЕ ЗАГЛАВНЫЕ": "unifiedchat-text--upper", "все строчные": "unifiedchat-text--lower" };
+
+    function applyVisualConfig(cfg) {
+      const root = document.documentElement.style;
+      root.setProperty("--unifiedchat-accent", cfg.accentColor);
+      root.setProperty("--unifiedchat-text", cfg.textColor);
+      root.setProperty("--unifiedchat-scale", String(Math.max(50, cfg.scale) / 100));
+      root.setProperty("--unifiedchat-radius", cfg.cornerRadius + "px");
+      root.setProperty("--unifiedchat-gap", cfg.messageSpacing + "px");
+      root.setProperty("--unifiedchat-font", resolveFontStack(cfg));
+      root.setProperty("--unifiedchat-letter-spacing", cfg.letterSpacing + "px");
+      root.setProperty("--unifiedchat-word-spacing", cfg.wordSpacing + "px");
+      root.setProperty(
+        "--unifiedchat-shadow",
+        cfg.shadowBlur > 0 || cfg.shadowOffsetX !== 0 || cfg.shadowOffsetY !== 0
+          ? `${cfg.shadowOffsetX}px ${cfg.shadowOffsetY}px ${cfg.shadowBlur}px ${cfg.shadowColor}`
+          : "none"
+      );
+
+      // Роли/бейджи: единый формат чипа задан в CSS, здесь только цвета.
+      root.setProperty("--unifiedchat-role-broadcaster", cfg.badgeColorBroadcaster);
+      root.setProperty("--unifiedchat-role-moderator", cfg.badgeColorModerator);
+      root.setProperty("--unifiedchat-role-vip", cfg.badgeColorVip);
+      root.setProperty("--unifiedchat-role-subscriber", cfg.badgeColorSubscriber);
+      root.setProperty("--unifiedchat-role-staff", cfg.badgeColorStaff);
+      root.setProperty("--unifiedchat-role-partner", cfg.badgeColorPartner);
+
+      // Фон карточки: можно полностью убрать, задать свой цвет и размыть
+      // (backdrop-filter) в дополнение к обычной прозрачности.
+      root.setProperty("--unifiedchat-bg-color", hexToRgbList(cfg.bgColor));
+      root.setProperty("--unifiedchat-bg-alpha", String(Math.min(100, Math.max(0, cfg.bgOpacity)) / 100));
+      root.setProperty("--unifiedchat-bg-blur", Math.max(0, cfg.bgBlur) + "px");
+      feed.classList.toggle("unifiedchat-no-bg", !cfg.enableBackground);
+
+      document.body.style.fontSize = cfg.fontSize + "px";
+
+      // Окно: "стример" (внутри Hub, непрозрачный стилизованный интерфейс) или
+      // "зритель" (прозрачный оверлей для OBS/трансляции) — см. resolveViewMode().
+      const mode = resolveViewMode(cfg);
+      document.body.classList.toggle("unifiedchat-mode-streamer", mode === "streamer");
+      document.body.classList.toggle("unifiedchat-mode-viewer", mode === "viewer");
+      // Размытие — только в окне стримера и только если blur > 0 (см. CSS .unifiedchat-glass).
+      feed.classList.toggle("unifiedchat-glass", mode === "streamer" && cfg.enableBackground && cfg.bgBlur > 0);
+
+      // Начертание текста сообщений: жирный/курсив/подчёркнутый/регистр —
+      // применяются классами на саму ленту, чтобы не переписывать каждое
+      // уже отрисованное сообщение по отдельности.
+      feed.classList.toggle("unifiedchat-text--bold", !!cfg.textBold);
+      feed.classList.toggle("unifiedchat-text--italic", !!cfg.textItalic);
+      feed.classList.toggle("unifiedchat-text--underline", !!cfg.textUnderline);
+      Object.values(CASE_CLASS).forEach((c) => feed.classList.remove(c));
+      if (CASE_CLASS[cfg.textCase]) feed.classList.add(CASE_CLASS[cfg.textCase]);
+
+      Object.values(ANIM_CLASS).forEach((c) => feed.classList.remove(c));
+      feed.classList.add(ANIM_CLASS[cfg.animationStyle] || ANIM_CLASS["Плавно (fade)"]);
+
+      // "Новые снизу" — сообщения прижаты к низу ленты (обычное поведение
+      // чата), "Новые сверху" — к верху, иначе при малом числе сообщений
+      // лента выглядела бы неестественно вжатой в один угол.
+      feed.style.justifyContent = cfg.direction === "Новые сверху" ? "flex-start" : "flex-end";
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function pad(n) { return String(n).padStart(2, "0"); }
+
+    // === Отрисовка объединённой ленты ===
+    function addMessage(msg) {
+      const emptyNotice = feed.querySelector(".unifiedchat-empty");
+      if (emptyNotice) emptyNotice.remove();
+
+      const el = document.createElement("div");
+      el.className =
+        "unifiedchat-msg unifiedchat-msg--" + msg.platform +
+        (msg.superchat ? " unifiedchat-msg--super" : "") +
+        (msg.system ? " unifiedchat-msg--system" : "");
+
+      let head = "";
+      if (config.showPlatformIcons && !msg.system) {
+        head += iconSpan("unifiedchat-platform", msg.platform === "twitch" ? "twitchPlatform" : "youtubePlatform", msg.platform === "twitch" ? "Twitch" : "YouTube");
+      }
+      if (config.showTimestamps) {
+        const d = new Date(msg.ts);
+        head += `<span class="unifiedchat-time">${pad(d.getHours())}:${pad(d.getMinutes())}</span>`;
+      }
+      if (config.showBadges && msg.badges && msg.badges.length) {
+        head += msg.badges.map((b) => badgeSpan(b)).join("");
+      }
+      if (!msg.system) {
+        const authorColor = msg.color || (msg.platform === "twitch" ? "#c084fc" : "#ff8080");
+        head += `<span class="unifiedchat-author" style="color:${authorColor}">${escapeHtml(msg.author)}</span>`;
+        head += `<span class="unifiedchat-sep">:</span>`;
+      }
+
+      // Системные сообщения (таймаут/бан/очистка чата) — одна строка, без
+      // отдельной "шапки". Обычные сообщения — шапка (иконка/бейджи/имя)
+      // сверху, сам текст отдельной строкой ниже, как в референсе интерфейса.
+      let inner;
+      if (msg.system) {
+        inner = `<span class="unifiedchat-text">${msg.html}</span>`;
+      } else {
+        inner = `<div class="unifiedchat-msg-head">${head}</div><span class="unifiedchat-text">${msg.html}</span>`;
+        if (msg.superchat) {
+          inner += `<span class="unifiedchat-super-amount">${escapeHtml(msg.superchat)}</span>`;
+        }
+      }
+      el.innerHTML = inner;
+
+      if (config.direction === "Новые сверху") {
+        feed.insertBefore(el, feed.firstChild);
+      } else {
+        feed.appendChild(el);
+      }
+
+      while (feed.children.length > Math.max(5, config.maxMessages)) {
+        feed.removeChild(config.direction === "Новые сверху" ? feed.lastChild : feed.firstChild);
+      }
+
+      if (config.direction !== "Новые сверху") {
+        feed.scrollTop = feed.scrollHeight;
+      }
+    }
+
+    function showEmptyState() {
+      if (feed.children.length === 0) {
+        feed.innerHTML =
+          '<div class="unifiedchat-empty">Настройте виджет: укажите канал Twitch и/или канал YouTube в настройках.</div>';
+      }
+    }
+
+    // ================= СТОРОННИЕ ЭМОУТЫ TWITCH (7TV + BetterTTV, глобальные) =================
+    // Только глобальные наборы: чтобы получить наборы конкретного канала,
+    // нужен числовой Twitch ID канала, а его официально можно узнать только
+    // через Twitch Helix API с client-id/токеном — это уже не "анонимное"
+    // подключение, поэтому в MVP такого не делаем (см. README, раздел
+    // "Известные ограничения"). Глобальные наборы не требуют авторизации и
+    // подходят под тот же принцип анонимного чтения, что и сам Twitch-чат.
+    const thirdPartyEmotes = new Map(); // "PogU" -> url
+
+    // fetch с таймаутом: без него зависший запрос (7TV/BTTV недоступны) мог
+    // навсегда заблокировать запуск виджета — пустое окно без сообщений и ошибок.
+    function fetchWithTimeout(url, ms) {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), ms);
+      return fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(t));
+    }
+
+    async function loadThirdPartyEmotesGlobal() {
+      try {
+        const res = await fetchWithTimeout("https://7tv.io/v3/emote-sets/global", 5000);
+        const data = await res.json();
+        (data.emotes || []).forEach((e) => {
+          const files = e.data && e.data.host && e.data.host.files;
+          if (!files || !files.length) return;
+          const file = files.find((f) => f.name.endsWith("2x")) || files[files.length - 1];
+          thirdPartyEmotes.set(e.name, "https:" + e.data.host.url + "/" + file.name);
+        });
+      } catch (err) {
+        console.warn("unified-chat: не удалось загрузить глобальные эмоуты 7TV", err);
+      }
+      try {
+        const res = await fetchWithTimeout("https://api.betterttv.net/3/cached/emotes/global", 5000);
+        const data = await res.json();
+        (data || []).forEach((e) => {
+          if (!thirdPartyEmotes.has(e.code)) {
+            thirdPartyEmotes.set(e.code, `https://cdn.betterttv.net/emote/${e.id}/2x`);
+          }
+        });
+      } catch (err) {
+        console.warn("unified-chat: не удалось загрузить глобальные эмоуты BetterTTV", err);
+      }
+    }
+
+    function applyThirdPartyEmotes(html) {
+      if (!config.enableThirdPartyEmotes || thirdPartyEmotes.size === 0) return html;
+      // html уже содержит escaped-текст и, возможно, <img> нативных эмоутов
+      // Twitch — режем по пробелам вне тегов, заменяем только "голые" слова.
+      return html.replace(/(^|\s)([A-Za-z0-9_]{2,30})(?=\s|$)/g, (whole, prefix, word) => {
+        const url = thirdPartyEmotes.get(word);
+        if (!url) return whole;
+        return `${prefix}<img class="unifiedchat-emote" src="${url}" alt="${escapeHtml(word)}" title="${escapeHtml(word)}" />`;
+      });
+    }
+
+    // ================= TWITCH (анонимное подключение к IRC по WebSocket) =================
+    // Публичный чат Twitch можно читать без токена/OAuth — достаточно анонимного
+    // логина вида "justinfanNNNNN" (стандартный приём, которым пользуются все
+    // сторонние Twitch-чат-виджеты). Собственный аккаунт стримера не нужен.
+    // У каждого бейджа есть role — она решает ЦВЕТ чипа (см. applyVisualConfig
+    // и CSS .unifiedchat-badge--*), одинаково для Twitch и YouTube, чтобы
+    // "модератор" везде выглядел одинаково независимо от площадки.
+    const TWITCH_BADGE_ICONS = {
+      broadcaster: { icon: "crown", label: "Стример", role: "broadcaster" },
+      moderator: { icon: "shield", label: "Модератор", role: "moderator" },
+      vip: { icon: "gem", label: "VIP", role: "vip" },
+      subscriber: { icon: "star", label: "Подписчик", role: "subscriber" },
+      founder: { icon: "trophy", label: "Фаундер", role: "subscriber" },
+      partner: { icon: "check", label: "Партнёр", role: "partner" },
+      staff: { icon: "wrench", label: "Staff", role: "staff" },
+      admin: { icon: "wrench", label: "Admin", role: "staff" },
+    };
+
+    function renderTwitchText(text, emotesRaw) {
+      let base;
+      if (!emotesRaw) {
+        base = escapeHtml(text);
+      } else {
+        const ranges = [];
+        emotesRaw.split("/").forEach((part) => {
+          const [id, posList] = part.split(":");
+          if (!id || !posList) return;
+          posList.split(",").forEach((pos) => {
+            const [s, e] = pos.split("-").map(Number);
+            if (!Number.isNaN(s) && !Number.isNaN(e)) ranges.push({ id, s, e });
+          });
+        });
+        ranges.sort((a, b) => a.s - b.s);
+
+        // Twitch отдаёт позиции по code unit'ам исходной строки — используем
+        // обычную индексацию JS-строки (UTF-16), это совпадает с форматом Twitch.
+        let result = "";
+        let cursor = 0;
+        ranges.forEach((r) => {
+          if (r.s < cursor || r.s > text.length) return;
+          result += escapeHtml(text.slice(cursor, r.s));
+          result += `<img class="unifiedchat-emote" src="https://static-cdn.jtvnw.net/emoticons/v2/${r.id}/default/dark/2.0" alt="" />`;
+          cursor = r.e + 1;
+        });
+        result += escapeHtml(text.slice(cursor));
+        base = result;
+      }
+      return applyThirdPartyEmotes(base);
+    }
+
+    function parseTwitchTags(raw) {
+      const tags = {};
+      raw.split(";").forEach((kv) => {
+        const idx = kv.indexOf("=");
+        if (idx === -1) return;
+        tags[kv.slice(0, idx)] = kv.slice(idx + 1);
+      });
+      return tags;
+    }
+
+    let currentTwitchChannel = "";
+    function handleTwitchLine(line, ws) {
+      if (line.startsWith("PING")) {
+        ws.send("PONG :tmi.twitch.tv");
+        return;
+      }
+      // Подтверждение входа в чат канала (JOIN / конец списка имён) — только
+      // теперь честно считаем, что подключились.
+      if (/ (366|JOIN) /.test(line) && !/PRIVMSG/.test(line)) {
+        setStatus("twitch", "connected", "#" + currentTwitchChannel);
+        return;
+      }
+      if (/ NOTICE /.test(line)) {
+        const notice = line.replace(/^.* NOTICE [^ ]+ :?/, "");
+        setStatus("twitch", "error", notice);
+        return;
+      }
+
+      // Действия модераторов: CLEARCHAT (таймаут/бан/полная очистка) и
+      // CLEARMSG (удаление одного сообщения). Twitch присылает их только
+      // потому что мы запросили CAP twitch.tv/commands при подключении —
+      // отдельных прав/токена для этого не нужно, это тоже часть анонимного
+      // чтения публичного чата.
+      if (config.highlightModActions) {
+        const clearChat = line.match(/^@([^ ]+) :[^ ]+ CLEARCHAT #[^ ]+(?: :(.*))?$/);
+        if (clearChat) {
+          const tags = parseTwitchTags(clearChat[1]);
+          const target = clearChat[2];
+          const banDuration = tags["ban-duration"];
+          let text;
+          if (!target) text = "чат полностью очищен модератором";
+          else if (banDuration) text = `${escapeHtml(target)} получил(а) таймаут (${banDuration} сек)`;
+          else text = `${escapeHtml(target)} забанен(а)`;
+          addMessage({ platform: "twitch", system: true, html: text, ts: Date.now() });
+          return;
+        }
+        const clearMsg = line.match(/^@([^ ]+) :[^ ]+ CLEARMSG #[^ ]+ :(.*)$/);
+        if (clearMsg) {
+          const tags = parseTwitchTags(clearMsg[1]);
+          const author = tags["login"] || "пользователь";
+          addMessage({ platform: "twitch", system: true, html: `сообщение от ${escapeHtml(author)} удалено модератором`, ts: Date.now() });
+          return;
+        }
+      }
+
+      const match = line.match(/^@([^ ]+) :[^!]+![^ ]+ PRIVMSG #[^ ]+ :(.*)$/);
+      if (!match) return;
+      const tags = parseTwitchTags(match[1]);
+      const text = match[2];
+
+      const displayName = (tags["display-name"] || "").replace(/\\s/g, " ") || "twitch";
+      const color = tags["color"] && tags["color"] !== "" ? tags["color"] : null;
+      const badgeNames = (tags["badges"] || "")
+        .split(",")
+        .filter(Boolean)
+        .map((b) => b.split("/")[0]);
+      const badges = badgeNames
+        .map((name) => TWITCH_BADGE_ICONS[name])
+        .filter(Boolean);
+
+      addMessage({
+        platform: "twitch",
+        author: displayName,
+        color,
+        badges,
+        html: renderTwitchText(text, tags["emotes"] || ""),
+        ts: Date.now(),
+      });
+    }
+
+    let twitchSocket = null;
+    function connectTwitch(channel) {
+      if (twitchSocket) { try { twitchSocket.close(); } catch (_) {} twitchSocket = null; }
+      if (!channel) { setStatus("twitch", "idle"); return; }
+      let retryDelay = 2000;
+      let stopped = false;
+      currentTwitchChannel = channel;
+
+      function connect() {
+        if (stopped) return;
+        setStatus("twitch", "connecting", "подключение к #" + channel + "…");
+        const ws = new WebSocket("wss://irc-ws.chat.twitch.tv:443");
+        twitchSocket = ws;
+        ws.onopen = () => {
+          ws.send("CAP REQ :twitch.tv/tags twitch.tv/commands");
+          ws.send("PASS SCHMOOPIIE");
+          ws.send("NICK justinfan" + Math.floor(10000 + Math.random() * 80000));
+          ws.send("JOIN #" + channel);
+          retryDelay = 2000;
+        };
+        ws.onmessage = (event) => {
+          event.data
+            .split("\r\n")
+            .filter(Boolean)
+            .forEach((line) => handleTwitchLine(line, ws));
+        };
+        ws.onclose = () => {
+          if (stopped) return;
+          setStatus("twitch", "connecting", "переподключение…");
+          setTimeout(connect, retryDelay);
+          retryDelay = Math.min(retryDelay * 1.5, 30000);
+        };
+        ws.onerror = () => {
+          setStatus("twitch", "error", "нет связи с чатом Twitch (проверь интернет/файрвол)");
+          try { ws.close(); } catch (_) { /* игнорируем */ }
+        };
+      }
+
+      connect();
+      return () => { stopped = true; setStatus("twitch", "idle"); if (twitchSocket) try { twitchSocket.close(); } catch (_) {} };
+    }
+
+    // ================= YOUTUBE =================
+    // У YouTube нет публичного анонимного протокола чата уровня Twitch IRC —
+    // единственный официальный способ читать сами СООБЩЕНИЯ live-чата без
+    // своего бэкенда — это YouTube Data API v3 со своим бесплатным API-ключом
+    // (см. README). Но раньше пользователю приходилось вручную копировать
+    // Video ID перед каждым эфиром — это и убираем.
+    //
+    // Способ найти ТЕКУЩУЮ трансляцию по каналу теперь два, по приоритету:
+    //  1. Внутри FoxFire Hub (когда доступен window.__TAURI__) — бесплатный
+    //     способ через Rust-команду resolve_youtube_live_video: она делает
+    //     обычный GET на youtube.com/@channel/live и смотрит, куда был
+    //     редирект — ровно то же самое, что видит человек, кликая "Live" на
+    //     канале. Квоту API это не тратит вообще, так как это не Data API.
+    //  2. Если виджет открыт отдельно (например, как файл в источнике
+    //     "Браузер" в OBS, без FoxFire Hub рядом) — резервный вариант через
+    //     сам Data API (search.list), с редким интервалом опроса, чтобы не
+    //     упереться в дневную квоту ключа (см. README о квоте).
+    // В обоих случаях можно вписать youtubeVideoIdOverride — тогда виджет
+    // не ищет ничего сам и сразу использует указанный Video ID (запасной
+    // вариант на случай, если авто-поиск не сработал).
+
+    function ytBadges(author) {
+      const list = [];
+      if (author.isChatOwner) list.push({ icon: "crown", label: "Владелец канала", role: "broadcaster" });
+      if (author.isChatModerator) list.push({ icon: "shield", label: "Модератор", role: "moderator" });
+      if (author.isChatSponsor) list.push({ icon: "star", label: "Спонсор канала", role: "subscriber" });
+      if (author.isVerified) list.push({ icon: "check", label: "Подтверждён", role: "partner" });
+      return list;
+    }
+
+    async function fetchLiveChatId(videoId, apiKey) {
+      const url =
+        `https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails` +
+        `&id=${encodeURIComponent(videoId)}&key=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message || "YouTube API error");
+      const item = data.items && data.items[0];
+      return item && item.liveStreamingDetails ? item.liveStreamingDetails.activeLiveChatId : null;
+    }
+
+    async function pollYoutubeMessages(liveChatId, apiKey, pageToken, onEnded, stoppedRef) {
+      if (stoppedRef.stopped) return;
+      let nextDelay = 5000;
+      try {
+        let url =
+          `https://www.googleapis.com/youtube/v3/liveChat/messages?liveChatId=${encodeURIComponent(liveChatId)}` +
+          `&part=snippet,authorDetails&key=${encodeURIComponent(apiKey)}`;
+        if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
+
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (data.error) {
+          const reason = ((data.error.errors && data.error.errors[0] && data.error.errors[0].reason) || "");
+          if (reason === "liveChatEnded" || res.status === 403 || res.status === 404) {
+            console.warn("unified-chat: YouTube-трансляция завершена, ищем следующую");
+            onEnded();
+            return;
+          }
+          console.warn("unified-chat: YouTube API вернул ошибку", data.error.message);
+          nextDelay = 30000; // скорее всего квота — не долбим API чаще раза в 30с
+        } else {
+          (data.items || []).forEach((item) => {
+            const snippet = item.snippet || {};
+            const author = item.authorDetails || {};
+            if (!snippet.displayMessage) return;
+            addMessage({
+              platform: "youtube",
+              author: author.displayName || "YouTube",
+              color: null,
+              badges: ytBadges(author),
+              html: escapeHtml(snippet.displayMessage),
+              ts: snippet.publishedAt ? new Date(snippet.publishedAt).getTime() : Date.now(),
+              superchat: snippet.superChatDetails ? snippet.superChatDetails.amountDisplayString : null,
+            });
+          });
+          pageToken = data.nextPageToken || pageToken;
+          nextDelay = Math.max(2000, data.pollingIntervalMillis || 5000);
+        }
+      } catch (err) {
+        console.warn("unified-chat: не удалось опросить YouTube чат", err);
+        nextDelay = 15000;
+      }
+      setTimeout(() => pollYoutubeMessages(liveChatId, apiKey, pageToken, onEnded, stoppedRef), nextDelay);
+    }
+
+    // --- Способ 1: бесплатный поиск через Rust (только внутри FoxFire Hub) ---
+    // Tauri v1: __TAURI__.tauri.invoke, Tauri v2: __TAURI__.core.invoke (или __TAURI_INTERNALS__).
+    function tauriInvoke() {
+      const t = window.__TAURI__;
+      if (t && t.tauri && t.tauri.invoke) return t.tauri.invoke.bind(t.tauri);
+      if (t && t.core && t.core.invoke) return t.core.invoke.bind(t.core);
+      if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) return window.__TAURI_INTERNALS__.invoke.bind(window.__TAURI_INTERNALS__);
+      return null;
+    }
+    function hasTauri() { return !!tauriInvoke(); }
+    async function findLiveVideoIdViaTauri(channel) {
+      try {
+        return await tauriInvoke()("resolve_youtube_live_video", { channel });
+      } catch (err) {
+        console.warn("unified-chat: авто-поиск трансляции через FoxFire Hub не сработал", err);
+        return null;
+      }
+    }
+
+    // --- Способ 2: резервный поиск через официальный Data API (вне Hub) ---
+    let cachedChannelId = null;
+    let cachedChannelInput = null;
+    async function resolveChannelId(channelInput, apiKey) {
+      if (cachedChannelInput === channelInput && cachedChannelId) return cachedChannelId;
+      let handle = channelInput.trim();
+      const m = handle.match(/youtube\.com\/([^/?#]+)/);
+      if (m) handle = m[1];
+      let url;
+      if (handle.startsWith("UC")) {
+        url = `https://www.googleapis.com/youtube/v3/channels?part=id&id=${encodeURIComponent(handle)}&key=${encodeURIComponent(apiKey)}`;
+      } else {
+        if (!handle.startsWith("@")) handle = "@" + handle;
+        url = `https://www.googleapis.com/youtube/v3/channels?part=id&forHandle=${encodeURIComponent(handle)}&key=${encodeURIComponent(apiKey)}`;
+      }
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message || "YouTube API error");
+      const id = data.items && data.items[0] && data.items[0].id;
+      if (id) { cachedChannelId = id; cachedChannelInput = channelInput; }
+      return id || null;
+    }
+    async function findLiveVideoIdViaSearchApi(channelInput, apiKey) {
+      const channelId = await resolveChannelId(channelInput, apiKey);
+      if (!channelId) return null;
+      const url =
+        `https://www.googleapis.com/youtube/v3/search?part=id&channelId=${encodeURIComponent(channelId)}` +
+        `&eventType=live&type=video&key=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.error) {
+        console.warn("unified-chat: резервный поиск трансляции YouTube вернул ошибку (вероятно, квота)", data.error.message);
+        return null;
+      }
+      const item = data.items && data.items[0];
+      return item && item.id ? item.id.videoId : null;
+    }
+
+    // --- Способ 0 (по умолчанию): чтение БЕЗ ключа через Hub ---
+    // Сам YouTube читает Rust-часть Hub (см. hub-patch/youtube_chat.rs), виджет
+    // только спрашивает у неё новые сообщения. Достучаться до Hub можно двумя
+    // путями, оба отдают одинаковый ответ:
+    //  - внутри окна Hub — Tauri-команда yt_chat_poll;
+    //  - в OBS/браузере — по ссылке http://127.0.0.1:ПОРТ/w/unified-chat/index.html
+    //    (локальный сервер Hub): тогда виджет опрашивает /api/yt/poll на том же адресе.
+    // Если открыт как file:// — достучаться некуда, нужен API-ключ или ссылка из Hub.
+    function keylessTransport() {
+      // Открыто с локального сервера Hub (OBS, браузер и окно Hub по http://127.0.0.1) —
+      // спрашиваем сервер напрямую, IPC Tauri для этого не нужен.
+      if (location.protocol === "http:" && /^(127\.0\.0\.1|localhost)$/.test(location.hostname)) {
+        return {
+          name: "local",
+          poll: async (q) => {
+            const url = `${location.origin}/api/yt/poll?channel=${encodeURIComponent(q.channel)}` +
+              `&video=${encodeURIComponent(q.video)}&since=${q.since}`;
+            const res = await fetchWithTimeout(url, 8000);
+            if (!res.ok) throw new Error("локальный сервер Hub ответил " + res.status);
+            return await res.json();
+          },
+        };
+      }
+      if (hasTauri()) {
+        return {
+          name: "tauri",
+          poll: (q) => tauriInvoke()("yt_chat_poll", { channel: q.channel, videoId: q.video, since: q.since }),
+        };
+      }
+      return null;
+    }
+
+    function ytRunsToHtml(runs) {
+      return (runs || []).map((r) => {
+        if (r.emoji && /^https:\/\//i.test(r.emoji)) {
+          return `<img class="unifiedchat-emote" src="${escapeHtml(r.emoji)}" alt="${escapeHtml(r.text || "")}" title="${escapeHtml(r.text || "")}" />`;
+        }
+        return escapeHtml(r.text || "");
+      }).join("");
+    }
+    const YT_ROLE_BADGES = {
+      owner: { icon: "crown", label: "Владелец канала", role: "broadcaster" },
+      moderator: { icon: "shield", label: "Модератор", role: "moderator" },
+      member: { icon: "star", label: "Участник канала", role: "subscriber" },
+      verified: { icon: "check", label: "Подтверждён", role: "partner" },
+    };
+
+    function runKeyless(cfg, transport, stoppedRef, onGiveUp) {
+      let since = 0;
+      let fails = 0;
+      async function tick() {
+        if (stoppedRef.stopped) return;
+        let delay = 1500;
+        try {
+          const r = await transport.poll({
+            channel: (cfg.youtubeChannel || "").trim(),
+            video: (cfg.youtubeVideoIdOverride || "").trim(),
+            since,
+          });
+          if (stoppedRef.stopped) return;
+          fails = 0;
+          if (typeof r.next === "number") since = r.next;
+          if (r.state === "connected") setStatus("youtube", "connected", r.message || "");
+          else if (r.state === "error") setStatus("youtube", "error", r.message || "ошибка чтения чата");
+          else if (r.state === "offline") setStatus("youtube", "idle", r.message || "эфира сейчас нет, жду…");
+          else setStatus("youtube", "connecting", r.message || "ищу трансляцию…");
+          (r.messages || []).forEach((m) => {
+            addMessage({
+              platform: "youtube",
+              author: m.author || "YouTube",
+              color: null,
+              badges: (m.badges || []).map((b) => YT_ROLE_BADGES[b]).filter(Boolean),
+              html: ytRunsToHtml(m.runs),
+              ts: m.ts || Date.now(),
+              superchat: m.superchat || null,
+            });
+          });
+          if (r.state === "error") delay = 5000;
+        } catch (err) {
+          fails++;
+          setStatus("youtube", "error", "нет связи с Hub: " + (err && err.message ? err.message : err));
+          if (fails >= 5 && cfg.youtubeApiKey) {
+            console.warn("unified-chat: чтение без ключа недоступно, перехожу на API-ключ");
+            onGiveUp();
+            return;
+          }
+          delay = 5000;
+        }
+        setTimeout(tick, delay);
+      }
+      tick();
+    }
+
+    let youtubeStoppedRef = { stopped: false };
+    async function connectYoutube(cfg) {
+      youtubeStoppedRef.stopped = true; // останавливаем предыдущую сессию, если была
+      const stoppedRef = { stopped: false };
+      youtubeStoppedRef = stoppedRef;
+
+      if (!cfg.youtubeChannel && !cfg.youtubeVideoIdOverride) { setStatus("youtube", "idle"); return; }
+
+      const wantApi = cfg.youtubeMode === "API-ключ (официально)";
+      const transport = wantApi ? null : keylessTransport();
+
+      if (transport) {
+        runKeyless(cfg, transport, stoppedRef, () => connectYoutubeApi(cfg, stoppedRef));
+        return;
+      }
+      if (!cfg.youtubeApiKey) {
+        setStatus(
+          "youtube", "error",
+          wantApi
+            ? "не указан API-ключ YouTube"
+            : "без ключа чат YouTube читается только через Hub: открой виджет по ссылке из Hub (http://127.0.0.1…) или впиши API-ключ"
+        );
+        return;
+      }
+      connectYoutubeApi(cfg, stoppedRef);
+    }
+
+    // --- Официальный способ: YouTube Data API v3 со своим ключом ---
+    async function connectYoutubeApi(cfg, stoppedRef) {
+      const { youtubeChannel, youtubeApiKey, youtubeVideoIdOverride } = cfg;
+      const usingTauri = hasTauri();
+
+      async function findVideoId() {
+        if (youtubeVideoIdOverride) return youtubeVideoIdOverride;
+        if (usingTauri) return await findLiveVideoIdViaTauri(youtubeChannel);
+        return await findLiveVideoIdViaSearchApi(youtubeChannel, youtubeApiKey);
+      }
+
+      async function loop() {
+        if (stoppedRef.stopped) return;
+        setStatus("youtube", "connecting");
+        let videoId = null;
+        try {
+          videoId = await findVideoId();
+        } catch (err) {
+          console.warn("unified-chat: ошибка при поиске трансляции YouTube", err);
+        }
+        if (stoppedRef.stopped) return;
+
+        if (!videoId) {
+          // Трансляции пока нет — если ищем бесплатно через Hub, можно
+          // проверять часто (это не тратит квоту); если через Data API —
+          // редко, чтобы уложиться в дневной лимит ключа.
+          setTimeout(loop, usingTauri ? 20000 : 5 * 60 * 1000);
+          return;
+        }
+
+        try {
+          const liveChatId = await fetchLiveChatId(videoId, youtubeApiKey);
+          if (!liveChatId) {
+            setTimeout(loop, usingTauri ? 20000 : 5 * 60 * 1000);
+            return;
+          }
+          setStatus("youtube", "connected");
+          pollYoutubeMessages(liveChatId, youtubeApiKey, undefined, () => { if (!stoppedRef.stopped) loop(); }, stoppedRef);
+        } catch (err) {
+          console.warn("unified-chat: ошибка при подключении к live-чату YouTube", err);
+          setStatus("youtube", "error");
+          setTimeout(loop, 20000);
+        }
+      }
+
+      loop();
+    }
+
+    // === Демо-сообщения для предпросмотра (когда обе площадки не заданы) ===
+    // Демо-сообщения показывают сразу все роли/цвета бейджей — удобно, чтобы
+    // проверить свою раскраску в настройках, не дожидаясь реального эфира.
+    function showDemoMessages() {
+      addMessage({ platform: "twitch", author: "стример", color: "#e2820a", badges: [TWITCH_BADGE_ICONS.broadcaster], html: applyThirdPartyEmotes(escapeHtml("всем привет, погнали стрим!")), ts: Date.now() });
+      addMessage({ platform: "youtube", author: "Зритель42", badges: [{ icon: "star", label: "Спонсор канала", role: "subscriber" }], html: escapeHtml("наконец-то на двух площадках сразу видно чат 🔥"), ts: Date.now() });
+      addMessage({ platform: "twitch", author: "модератор_чата", color: "#3ea6ff", badges: [TWITCH_BADGE_ICONS.moderator], html: applyThirdPartyEmotes(escapeHtml("PogU красиво стало")), ts: Date.now() });
+      addMessage({ platform: "twitch", author: "vip_зритель", color: "#c084fc", badges: [TWITCH_BADGE_ICONS.vip], html: applyThirdPartyEmotes(escapeHtml("красивые бейджи стали, ровные!")), ts: Date.now() });
+      addMessage({ platform: "youtube", author: "ЩедрыйЗритель", badges: [], html: escapeHtml("Спасибо за стрим!"), ts: Date.now(), superchat: "500 ₽" });
+      if (config.highlightModActions) {
+        addMessage({ platform: "twitch", system: true, html: "нарушитель получил(а) таймаут (600 сек)", ts: Date.now() });
+      }
+    }
+
+    // Одно случайное тестовое сообщение — используется кнопкой "Тестовое
+    // сообщение" в settings.html, чтобы проверить анимацию появления и стиль,
+    // не открывая настоящий эфир.
+    const TEST_MESSAGE_POOL = [
+      { platform: "twitch", author: "стример", color: "#e2820a", badges: [TWITCH_BADGE_ICONS.broadcaster], text: "проверяем как это будет выглядеть в реальном чате" },
+      { platform: "youtube", author: "ОбычныйЗритель", badges: [], text: "привет из YouTube-чата 👋" },
+      { platform: "twitch", author: "модератор_чата", color: "#3ea6ff", badges: [TWITCH_BADGE_ICONS.moderator], text: "слежу за порядком PogChamp" },
+      { platform: "twitch", author: "vip_зритель", color: "#c084fc", badges: [TWITCH_BADGE_ICONS.vip], text: "VIP на месте!" },
+      { platform: "youtube", author: "ЩедрыйЗритель", badges: [{ icon: "star", label: "Спонсор канала", role: "subscriber" }], text: "держи донат ❤️", superchat: "250 ₽" },
+    ];
+    function showRandomTestMessage() {
+      const m = TEST_MESSAGE_POOL[Math.floor(Math.random() * TEST_MESSAGE_POOL.length)];
+      addMessage({ platform: m.platform, author: m.author, color: m.color, badges: m.badges, html: applyThirdPartyEmotes(escapeHtml(m.text)), ts: Date.now(), superchat: m.superchat });
+    }
+    window.addEventListener("message", (event) => {
+      if (event.data && event.data.type === "unifiedchat:test-message") showRandomTestMessage();
+    });
+
+    // === Запуск и применение конфига (общая точка для старта и для
+    // postMessage-обновлений из окна настроек) ===
+    let stopTwitch = null;
+    function startConnections(cfg, opts) {
+      applyVisualConfig(cfg);
+      feed.innerHTML = "";
+
+      const isDemo = opts && opts.demo;
+      if (isDemo) {
+        showDemoMessages();
+        return;
+      }
+
+      if (!cfg.twitchChannel && !(cfg.youtubeChannel || cfg.youtubeVideoIdOverride)) {
+        showEmptyState();
+      }
+
+      if (stopTwitch) stopTwitch();
+      stopTwitch = connectTwitch(cfg.twitchChannel.trim().toLowerCase().replace(/^#/, ""));
+
+      connectYoutube(cfg);
+    }
+
+    // postMessage от settings.html: живой предпросмотр. connectionKeys —
+    // поля, при изменении которых нужно по-настоящему переподключиться
+    // (а не просто перекрасить), остальные применяются мгновенно.
+    const CONNECTION_KEYS = ["twitchChannel", "youtubeChannel", "youtubeApiKey", "youtubeVideoIdOverride", "youtubeMode"];
+    window.addEventListener("message", (event) => {
+      const data = event.data;
+      if (!data || data.type !== "unifiedchat:config") return;
+      const prev = config;
+      config = { ...DEFAULTS, ...data.config };
+      const needsReconnect = data.forceReconnect || CONNECTION_KEYS.some((k) => prev[k] !== config[k]);
+      if (needsReconnect) {
+        startConnections(config, { demo: data.demo });
+      } else {
+        applyVisualConfig(config);
+      }
+    });
+
+    // === Файл настроек config.js (отдельный конфиг рядом с index.html) ===
+    // Hub сам пишет config.js при каждом изменении настроек. Виджет читает его
+    // при старте и перечитывает каждые 2 секунды — поэтому ссылка в OBS
+    // постоянная, менять её после правки настроек не нужно. Загрузка обычным
+    // <script> (не fetch) — так работает и из file:// в OBS без сервера.
+    // Если config.js нет — работаем по query-параметрам, как раньше.
+    // Предпросмотр внутри settings.html (iframe) config.js не читает: ему
+    // конфиг присылает postMessage.
+    const IS_EMBEDDED = window.parent !== window;
+
+    // Соседний файл рядом с index.html. Внутри Hub адрес страницы —
+    // asset.localhost/<путь целиком в percent-encoding, где "/" это %2F или
+    // %5C>, поэтому обычный относительный URL ("config.js") там НЕ работает:
+    // режем адрес по последнему разделителю любого из этих видов сами.
+    function siblingUrl(name) {
+      const href = location.href.split(/[?#]/)[0];
+      let cut = -1;
+      const re = /%5C|%2F|\//gi;
+      let m;
+      while ((m = re.exec(href))) cut = m.index + m[0].length;
+      return (cut < 0 ? href + "/" : href.slice(0, cut)) + name;
+    }
+
+    function loadConfigFile(bust) {
+      return new Promise((resolve) => {
+        try { delete window.__FOXFIRE_WIDGET_CONFIG__; } catch (_) { window.__FOXFIRE_WIDGET_CONFIG__ = undefined; }
+        const el = document.createElement("script");
+        let done = false;
+        const finish = (val) => { if (done) return; done = true; el.remove(); resolve(val); };
+        el.onload = () => finish(window.__FOXFIRE_WIDGET_CONFIG__ || null);
+        el.onerror = () => finish(null);
+        setTimeout(() => finish(null), 3000);
+        el.src = siblingUrl("config.js") + (bust ? "?t=" + Date.now() : "");
+        document.head.appendChild(el);
+      });
+    }
+
+    function normalizeFileConfig(raw) {
+      const out = {};
+      Object.keys(DEFAULTS).forEach((key) => {
+        if (!(key in raw)) return;
+        if (typeof DEFAULTS[key] === "boolean") out[key] = readBool(raw[key], DEFAULTS[key]);
+        else if (typeof DEFAULTS[key] === "number") out[key] = readNum(raw[key], DEFAULTS[key]);
+        else out[key] = String(raw[key]);
+      });
+      return out;
+    }
+
+    let lastFileJson = null;
+    async function pollConfigFile() {
+      const raw = await loadConfigFile(true);
+      if (!raw) return;
+      const json = JSON.stringify(raw);
+      if (json === lastFileJson) return;
+      lastFileJson = json;
+      const prev = config;
+      config = { ...DEFAULTS, ...normalizeFileConfig(raw) };
+      if (CONNECTION_KEYS.some((k) => prev[k] !== config[k])) startConnections(config, { demo: false });
+      else applyVisualConfig(config);
+    }
+
+    (async function bootstrap() {
+      loadThirdPartyEmotesGlobal(); // в фоне: сбой/таймаут эмоутов больше не блокирует запуск
+      if (!IS_EMBEDDED) {
+        const raw = await loadConfigFile(false);
+        if (raw) {
+          lastFileJson = JSON.stringify(raw);
+          config = { ...config, ...normalizeFileConfig(raw) };
+        }
+      }
+      // Демо-сообщения — только в предпросмотре настроек; в реальном окне/OBS
+      // без каналов показываем подсказку "Настройте виджет", а не выдуманный чат.
+      startConnections(config, { demo: IS_EMBEDDED && !config.twitchChannel && !config.youtubeChannel && !config.youtubeVideoIdOverride });
+      if (!IS_EMBEDDED) setInterval(pollConfigFile, 2000);
+      if (!IS_EMBEDDED) subscribeLiveConfig();
+    })();
+
+    // Живые изменения настроек от Hub (Tauri-событие) — для окна, запущенного
+    // кнопкой «Запустить». Работает и без config.js, поэтому режим окна
+    // («Как показывать») подхватывается сразу, даже если Hub не пишет файл.
+    // Встроенная копия без зависимостей: относительный foxfirehub-bridge.js в
+    // asset.localhost не открылся бы (см. siblingUrl).
+    function subscribeLiveConfig() {
+      try {
+        const ev = window.__TAURI__ && window.__TAURI__.event;
+        if (!ev || !ev.listen) return;
+        ev.listen("foxfirehub:config-updated", (e) => {
+          const p = e && e.payload;
+          if (!p || p.widgetId !== "unified-chat" || !(p.key in DEFAULTS)) return;
+          const norm = normalizeFileConfig({ [p.key]: p.value });
+          const prev = config;
+          config = { ...config, ...norm };
+          if (CONNECTION_KEYS.includes(p.key) && prev[p.key] !== config[p.key]) startConnections(config, { demo: false });
+          else applyVisualConfig(config);
+        });
+      } catch (err) {
+        console.warn("unified-chat: не удалось подписаться на живые настройки Hub", err);
+      }
+    }
+  </script>
+</body>
+</html>
