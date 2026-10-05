@@ -423,11 +423,19 @@
     "minAppVersion": "0.1.10",
     "versions": [
       {
+        "version": "1.0.1",
+        "releaseDate": "2026-10-06",
+        "downloadUrl": "https://github.com/FoxFIreUwU/foxfire-hub-widgets/releases/download/streamassist-chat-v1.0.1/streamassist-chat.zip",
+        "status": "stable",
+        "statusMessage": "",
+        "settingsEntry": "settings.html"
+      },
+      {
         "version": "1.0.0",
         "releaseDate": "2026-10-05",
         "downloadUrl": "https://github.com/FoxFIreUwU/foxfire-hub-widgets/releases/download/streamassist-chat-v1.0.0/streamassist-chat.zip",
-        "status": "stable",
-        "statusMessage": "",
+        "status": "warning",
+        "statusMessage": "Устаревшая версия: настройки внутри Hub не открывались (не загружался файл foxfirehub-bridge.js). Обновитесь до 1.0.1.",
         "settingsEntry": "settings.html"
       }
     ]

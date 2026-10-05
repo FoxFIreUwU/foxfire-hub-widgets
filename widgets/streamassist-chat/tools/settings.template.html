@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Настройки — Чат StreamAssist</title>
+<style>
+  /* Панель настроек (классы wp-*, seg, trow, sw) — из программы StreamAssist (app.css), цвета подстроены под Hub:
+     акцент берётся из темы Hub (--hub-accent), если её нет — фирменный оранжевый FoxFire. */
+  :root {
+    --bg: #0d0c0f; --bg2: #14110e; --panel: #1a1512; --line: rgba(255,255,255,.08); --line2: rgba(255,255,255,.16);
+    --tx: #f4f0ea; --mu: #a89a8c; --ac: var(--hub-accent, #e2820a); --ac2: var(--hub-accent-dark, #ba6c08);
+    --ok: #22c55e; --warn: #eab308; --bad: #ef4444; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--tx); font: 13px/1.45 system-ui, "Segoe UI", Roboto, sans-serif; }
+  body { padding: 14px 16px 28px; }
+  h1 { font-size: 15px; margin: 0 0 2px; } h2 { font-size: 13px; margin: 0 0 10px; }
+  .mu { color: var(--mu); }
+  button { font: inherit; color: inherit; background: none; border: 1px solid var(--line2); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+  button:hover { border-color: var(--ac); }
+  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--ac); outline-offset: 1px; }
+  button.pri { background: var(--ac); border-color: var(--ac); color: #1a0a00; font-weight: 600; }
+  button.pri:hover { filter: brightness(1.1); }
+  input[type=text], input[type=password], input[type=number], input[type=search], select, textarea { background: var(--bg); border: 1px solid var(--line2); border-radius: 6px; color: var(--tx); padding: 7px 10px; width: 100%; font: inherit; }
+  select { margin-top: 3px; }
+  input[type=color] { width: 46px; height: 32px; padding: 0; border: 1px solid var(--line2); background: var(--bg); cursor: pointer; }
+  input[type=range] { width: 100%; accent-color: var(--ac); }
+  .sw { appearance: none; width: 30px; height: 16px; background: var(--line2); border-radius: 8px; position: relative; cursor: pointer; flex: none; border: 0; padding: 0; }
+  .sw:checked { background: var(--ac2); }
+  .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; transition: left .15s; }
+  .sw:checked::after { left: 16px; }
+  .trow { display: flex; justify-content: space-between; align-items: center; margin: 10px 0; gap: 10px; }
+  .seg { display: flex; }
+  .seg button { padding: 6px 14px; margin-left: -1px; border-radius: 0; }
+  .seg button:first-child { margin-left: 0; border-radius: 6px 0 0 6px; } .seg button:last-child { border-radius: 0 6px 6px 0; }
+  .seg button.on { background: color-mix(in srgb, var(--ac) 18%, transparent); border-color: var(--ac); color: var(--ac); position: relative; z-index: 1; }
+
+  /* ——— Каркас страницы ——— */
+  .sa-top { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .sa-top .mu { font-size: 12px; }
+  .sa-grid { display: grid; grid-template-columns: minmax(330px, 430px) minmax(0, 1fr); gap: 18px; align-items: start; }
+  @media (max-width: 860px) { .sa-grid { grid-template-columns: 1fr; } .sa-right { position: static !important; order: -1; } }
+  .sa-right { position: sticky; top: 8px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; }
+  .cf { margin: 0 0 12px; position: relative; }
+  .cf > label { display: block; color: var(--mu); margin: 0 0 4px; }
+  .st { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; color: var(--mu); min-height: 16px; }
+  .st i { width: 8px; height: 8px; border-radius: 50%; background: #5a5148; flex: none; }
+  .st i.connected { background: var(--ok); } .st i.connecting { background: var(--warn); } .st i.error { background: var(--bad); }
+  .st span { overflow-wrap: anywhere; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .note { font-size: 12px; margin: 6px 0 0; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+  .warnbox { border: 1px solid color-mix(in srgb, var(--warn) 50%, transparent); background: color-mix(in srgb, var(--warn) 10%, transparent); color: #f1dca0; padding: 8px 10px; border-radius: 8px; margin-bottom: 12px; font-size: 12px; }
+
+  /* ——— Предпросмотр ——— */
+  .pvbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+  .pvbar select { width: auto; margin: 0; }
+  .pvbar .grow { flex: 1 1 auto; }
+  #pvbox { width: 100%; display: flex; justify-content: center; }
+  #pvframe { position: relative; overflow: hidden; border-radius: 10px; border: 1px solid var(--line2); flex: none; }
+  #pvhost { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+  .bg-dark { background: linear-gradient(135deg, #241d3b, #0b0a12); }
+  .bg-light { background: #e9e6f0; }
+  .bg-game { background: linear-gradient(160deg, #1c3a5e, #6b2a7a 55%, #c4572b); }
+  .bg-check { background: conic-gradient(#2a2730 25%, #1c1a21 0 50%, #2a2730 0 75%, #1c1a21 0) 0 0 / 24px 24px; }
+  #obslink { width: 100%; margin-top: 8px; font-size: 12px; display: none; }
+
+  /* ——— Панель настроек виджета (wpanel.js) ——— */
+  .wp .wp-t { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+  .wp-pre { margin: 6px 0 14px; } .wp-prow { display: flex; flex-wrap: wrap; gap: 6px; } .wp-pb { padding: 6px 10px; font-size: 12px; }
+  .wp-tabs { margin: 4px 0 10px; } .wp-tabs button { flex: 1; }
+  .wp-q { width: 100%; margin-bottom: 10px; }
+  .wp-lead { font-size: 12px; margin: 0 0 8px; }
+  .wp-sec { border-top: 1px solid var(--line); padding: 2px 0; }
+  .wp-sec > summary { cursor: pointer; padding: 9px 0; font-weight: 600; font-size: 13px; list-style: none; display: flex; align-items: center; gap: 8px; }
+  .wp-sec > summary::-webkit-details-marker { display: none; }
+  .wp-sec > summary::before { content: '›'; display: inline-block; width: 10px; color: var(--mu); transition: transform .15s; }
+  .wp-sec[open] > summary::before { transform: rotate(90deg); }
+  .wp-cnt { margin-left: auto; font-size: 11px; font-weight: 600; color: var(--ac); background: color-mix(in srgb, var(--ac) 18%, transparent); padding: 1px 7px; border-radius: 9px; }
+  .wp-tag { margin-left: auto; font-size: 11px; color: var(--mu); font-weight: 400; }
+  .wp-hint { font-size: 12px; margin: 0 0 8px; }
+  .wp-f { position: relative; margin: 0 0 12px; }
+  .wp-l { display: flex; justify-content: space-between; gap: 8px; color: var(--mu); font-size: 13px; margin: 0 0 4px; padding-right: 22px; }
+  .wp-l em { font-style: normal; font-size: 12px; }
+  .wp-nl { display: flex; align-items: center; gap: 8px; }
+  .wp .wp-nl input[type=range] { flex: 1 1 auto; width: auto; min-width: 0; }
+  .wp .wp-nb { width: 64px; flex: 0 0 64px; padding: 4px 6px; font-size: 12px; }
+  .wp-cl { display: flex; align-items: center; gap: 8px; }
+  .wp-cp { width: 36px; height: 28px; padding: 0; border: 1px solid var(--line2); background: none; cursor: pointer; }
+  .wp .wp-hx { width: 90px; padding: 5px 7px; font-size: 12px; }
+  .wp-ta { display: block; width: 100%; padding: 6px 8px; font-size: 12px; resize: vertical; }
+  .wp-r { position: absolute; right: 0; top: -2px; width: 20px; height: 20px; padding: 0; line-height: 18px; font-size: 13px; background: none; border: 0; color: var(--mu); cursor: pointer; }
+  .wp-r:hover { color: var(--ac); }
+  .wp-f.trow .wp-r { top: 50%; right: -24px; transform: translateY(-50%); }
+  .wp-rs { margin: 2px 0 10px; font-size: 12px; padding: 5px 10px; }
+  .wp-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .wp-btns button { font-size: 12px; padding: 6px 10px; }
+  .wp-note { margin: 10px 0 0; font-size: 12px; color: var(--ac); }
+  .wp { padding-right: 26px; }
+</style>
+</head>
+<body>
+  <div class="sa-top">
+    <h1>Чат StreamAssist</h1>
+    <span class="mu">Настройки сохраняются автоматически · <span id="savedNote"></span></span>
+  </div>
+  <div id="standalone" class="warnbox" style="display:none">Эта страница открыта отдельно от FoxFire Hub, поэтому настройки не сохраняются.
+    Откройте виджет в Hub: «Загруженное» → «Чат StreamAssist», либо перенесите оформление через раздел «Перенос стиля».</div>
+  <div id="loading" class="mu">Загрузка…</div>
+
+  <div class="sa-grid" id="app" style="display:none">
+    <div class="sa-left">
+      <div class="card">
+        <h2>Подключение</h2>
+        <div class="cf">
+          <label for="twitchChannel">Twitch: логин канала или ссылка</label>
+          <input type="text" id="twitchChannel" placeholder="например: foxfire_stream" autocomplete="off" spellcheck="false" />
+          <div class="st" id="st-twitch"><i></i><span></span></div>
+        </div>
+        <div class="cf">
+          <label for="youtubeChannel">YouTube: канал (ссылка, @имя или ID канала)</label>
+          <input type="text" id="youtubeChannel" placeholder="например: @foxfire" autocomplete="off" spellcheck="false" />
+          <div class="st" id="st-youtube"><i></i><span></span></div>
+        </div>
+        <div class="cf">
+          <label for="youtubeMode">Как читать чат YouTube</label>
+          <select id="youtubeMode"></select>
+          <p class="mu note" id="modeNote"></p>
+        </div>
+        <div class="cf" id="keyBox" style="display:none">
+          <label for="youtubeApiKey">API-ключ YouTube</label>
+          <input type="password" id="youtubeApiKey" autocomplete="off" spellcheck="false" />
+          <div class="row" style="margin-top:6px"><button type="button" id="checkKey">Проверить ключ</button><span id="keyResult" class="note"></span></div>
+          <p class="mu note">Ключ хранится в файле настроек виджета на этом компьютере. Не показывайте его на стриме.</p>
+        </div>
+        <div class="cf">
+          <label for="youtubeVideoIdOverride">Трансляция YouTube вручную (необязательно)</label>
+          <input type="text" id="youtubeVideoIdOverride" placeholder="ссылка на эфир или его ID" autocomplete="off" spellcheck="false" />
+          <p class="mu note">Нужно, только если автоматический поиск эфира по каналу не сработал.</p>
+        </div>
+        <div class="trow"><span>Сторонние смайлы (7TV, BetterTTV)</span><input type="checkbox" class="sw" id="thirdPartyEmotes" aria-label="Сторонние смайлы" /></div>
+      </div>
+
+      <div class="card">
+        <h2>Ссылка для OBS</h2>
+        <p class="mu note" style="margin-top:0">Вставьте её в OBS: «Источники» → «+» → «Браузер» → поле URL. Размер источника — любой, чат займёт его целиком.
+          Ссылка постоянная: после правки настроек её менять не нужно, но Hub должен быть запущен.</p>
+        <div class="row"><button type="button" class="pri" id="copyObs">Скопировать ссылку для OBS</button><span class="note" id="obsNote"></span></div>
+        <input type="text" id="obslink" readonly aria-label="Ссылка для OBS" />
+      </div>
+
+      <div class="card"><div id="panel"></div></div>
+    </div>
+
+    <div class="sa-right">
+      <div class="card">
+        <div class="pvbar">
+          <strong class="grow">Предпросмотр</strong>
+          <select id="pvSize" aria-label="Размер источника в OBS">
+            <option value="500x700">500 × 700 · чат сбоку</option>
+            <option value="400x600">400 × 600</option>
+            <option value="700x400">700 × 400 · внизу</option>
+            <option value="1280x720">1280 × 720 · весь экран</option>
+            <option value="1920x1080">1920 × 1080 · весь экран</option>
+          </select>
+          <select id="pvBg" aria-label="Фон предпросмотра">
+            <option value="dark">Тёмный фон</option><option value="game">Как игра</option><option value="light">Светлый фон</option><option value="check">Шахматка</option>
+          </select>
+        </div>
+        <div id="pvbox"><div id="pvframe" class="bg-dark"><div id="pvhost"></div></div></div>
+        <div class="row" style="margin-top:10px">
+          <button type="button" id="pvTest">Тестовое сообщение</button>
+          <button type="button" id="pvReplay">Проиграть заново</button>
+          <button type="button" id="pvReset" title="Вернёт оформление к стандартному. Фильтры и число сообщений останутся.">Сбросить оформление</button>
+        </div>
+        <p class="mu note" id="pvNote"></p>
+      </div>
+    </div>
+  </div>
+
+<!--INLINE foxfirehub-bridge.js-->
+<!--INLINE wstyle.js-->
+<!--INLINE wchat.js-->
+<!--INLINE wpanel.js-->
+<!--INLINE sachat-hub.js-->
+<script>
+(function () {
+  'use strict';
+  function siblingUrl(name) {
+    var href = location.href.split(/[?#]/)[0], cut = -1, re = /%5C|%2F|\//gi, m;
+    while ((m = re.exec(href))) cut = m.index + m[0].length;
+    return (cut < 0 ? href + '/' : href.slice(0, cut)) + name;
+  }
+  // Все скрипты вшиты выше (tools/build.py): подгружать соседние файлы нельзя, во вложенных окнах Hub это не работает.
+  start();
+
+  function start() {
+    var SAW = window.SAW, CHAT = SAW.chat, DEF = SAW.get('chat'), SCHEMA = CHAT.schema, HUB = window.SAHub, BR = window.FoxFireBridge;
+    var WIDGET_ID = 'streamassist-chat';
+    var $ = function (id) { return document.getElementById(id); };
+    BR.applyHubTheme();
+    document.getElementById('loading').style.display = 'none';
+    $('app').style.display = '';
+
+    var embedded = BR.isEmbeddedInHub();
+    if (!embedded) $('standalone').style.display = 'block';
+
+    // ——— Текущие настройки: всё, что Hub прислал в адресе страницы ———
+    var cfg = {};
+    new URLSearchParams(location.search).forEach(function (v, k) { cfg[k] = v; });
+    var DEFAULTS = SAW.defaults(SCHEMA);
+
+    var savedTimer = 0;
+    function save(patch) {
+      Object.assign(cfg, patch);
+      if (BR.saveConfig(WIDGET_ID, patch)) {
+        $('savedNote').textContent = 'сохранено ✓';
+        clearTimeout(savedTimer);
+        savedTimer = setTimeout(function () { $('savedNote').textContent = ''; }, 1800);
+      }
+    }
+
+    // ——— Предпросмотр ———
+    var host = $('pvhost'), frame = $('pvframe'), box = $('pvbox');
+    var pvW = 500, pvH = 700, pv = null;
+    var pvOpts = { mode: 'obs' };       // как в OBS: без размытия фона
+    function layoutPreview() {
+      var availW = Math.max(200, box.clientWidth), maxH = Math.max(300, Math.round(window.innerHeight * 0.62));
+      var k = Math.min(1, availW / pvW, maxH / pvH);
+      frame.style.width = Math.round(pvW * k) + 'px'; frame.style.height = Math.round(pvH * k) + 'px';
+      pvOpts = { mode: 'obs', w: pvW, h: pvH, k: k };
+      if (pv) { pv.update(DEF.migrate(cfg), pvOpts); }
+    }
+    pv = CHAT.create(host, DEF.migrate(cfg), { mode: 'obs', w: pvW, h: pvH, k: 1 });
+    var raf = 0;
+    function refreshPreview() {
+      if (raf) return;
+      raf = requestAnimationFrame(function () { raf = 0; pv.update(DEF.migrate(cfg), pvOpts); });
+    }
+    $('pvSize').onchange = function () { var p = this.value.split('x'); pvW = +p[0]; pvH = +p[1]; layoutPreview(); };
+    $('pvBg').onchange = function () { frame.className = 'bg-' + this.value; };
+    window.addEventListener('resize', layoutPreview);
+    if (window.ResizeObserver) new ResizeObserver(layoutPreview).observe(box);
+    layoutPreview();
+
+    // Образцы сообщений: свои номера (от 1 000 000), чтобы не пересекаться с настоящими сообщениями из чата.
+    var demoSeq = 1000000, demoTimers = [], showingDemo = false;
+    function clearDemoTimers() { demoTimers.forEach(clearTimeout); demoTimers = []; }
+    function pushSample(m) {
+      var c = Object.assign({}, m); c.seq = ++demoSeq; c.id = 'demo' + demoSeq; c.ts = Date.now();
+      pv.push(c);
+    }
+    function playDemo() {
+      clearDemoTimers(); pv.clear();
+      CHAT.demo(Date.now()).forEach(function (m, i) { demoTimers.push(setTimeout(function () { pushSample(m); }, i * 280)); });
+    }
+    $('pvReplay').onclick = function () {
+      if (sourceOn()) { pv.clear(); setPvNote(); return; }
+      playDemo();
+    };
+    $('pvTest').onclick = function () {
+      var pool = CHAT.demo(Date.now()).filter(function (m) { return m.kind !== 'system'; });
+      pushSample(pool[Math.floor(Math.random() * pool.length)]);
+    };
+    $('pvReset').onclick = function () { ctl.preset({ values: {} }); panel.refresh(); };
+
+    // ——— Подключения (то же самое, что делает index.html, только здесь — для предпросмотра и статуса) ———
+    var statusEls = { twitch: $('st-twitch'), youtube: $('st-youtube') };
+    function onStatus(platform, state, text) {
+      var el = statusEls[platform];
+      if (!el) return;
+      el.firstChild.className = state === 'idle' ? '' : state;
+      var names = { idle: 'не подключено', connecting: 'подключение', connected: 'подключено', error: 'ошибка' };
+      el.lastChild.textContent = state === 'idle' && !text ? '' : names[state] + (text ? ' · ' + text : '');
+    }
+    var conn = HUB.createConnections(null, { onMessage: function (m) { pv.push(m); }, onStatus: onStatus });
+    function sourceOn() {
+      var c = HUB.connFrom(cfg);
+      return !!(HUB.normTwitch(c.twitchChannel) || c.youtubeChannel || HUB.normVideoId(c.youtubeVideoIdOverride));
+    }
+    function setPvNote() {
+      $('pvNote').textContent = sourceOn()
+        ? 'Показаны настоящие сообщения из вашего чата. Пока их нет, нажмите «Тестовое сообщение».'
+        : 'Показаны образцы сообщений. Укажите канал Twitch или YouTube слева — здесь появится настоящий чат.';
+    }
+    function applyConn() {
+      var wasDemo = showingDemo, nowDemo = !sourceOn();
+      conn.apply(cfg);
+      showingDemo = nowDemo;
+      if (nowDemo && !wasDemo) playDemo();
+      if (!nowDemo && wasDemo) { clearDemoTimers(); pv.clear(); }
+      setPvNote();
+    }
+
+    // Поля подключения
+    var modeSel = $('youtubeMode');
+    [HUB.YT_MODE_KEYLESS, HUB.YT_MODE_API].forEach(function (m) { var o = document.createElement('option'); o.value = m; o.textContent = m; modeSel.appendChild(o); });
+    var c0 = HUB.connFrom(cfg);
+    $('twitchChannel').value = c0.twitchChannel; $('youtubeChannel').value = c0.youtubeChannel; modeSel.value = c0.youtubeMode;
+    $('youtubeApiKey').value = c0.youtubeApiKey; $('youtubeVideoIdOverride').value = c0.youtubeVideoIdOverride; $('thirdPartyEmotes').checked = c0.thirdPartyEmotes;
+    function syncMode() {
+      var api = modeSel.value === HUB.YT_MODE_API;
+      $('keyBox').style.display = api ? 'block' : 'none';
+      $('modeNote').textContent = api
+        ? 'Официальный способ Google: нужен свой API-ключ (YouTube Data API v3). Работает везде, но у ключа есть дневная квота.'
+        : 'Без ключа чат YouTube читает сам Hub (неофициальный способ — YouTube может его изменить). Нужен Hub с локальным сервером.';
+    }
+    syncMode();
+    ['twitchChannel', 'youtubeChannel', 'youtubeApiKey', 'youtubeVideoIdOverride'].forEach(function (id) {
+      var el = $(id), t = 0;
+      function commit() {
+        clearTimeout(t);
+        var v = HUB.connFrom((function () { var o = {}; o[id] = el.value; return o; })())[id];
+        if (cfg[id] === v) return;
+        var p = {}; p[id] = v; save(p); applyConn();
+      }
+      el.addEventListener('change', commit);
+      el.addEventListener('input', function () { clearTimeout(t); t = setTimeout(commit, 900); });   // не переподключаемся на каждую букву
+    });
+    modeSel.onchange = function () { save({ youtubeMode: modeSel.value }); syncMode(); applyConn(); };
+    $('thirdPartyEmotes').onchange = function () { save({ thirdPartyEmotes: this.checked }); applyConn(); };
+
+    // Проверка API-ключа: один дешёвый запрос (1 единица квоты) и понятный ответ по-русски.
+    var KEY_ERRORS = {
+      keyInvalid: 'ключ неверный — проверьте, что он скопирован целиком', API_KEY_INVALID: 'ключ неверный — проверьте, что он скопирован целиком',
+      accessNotConfigured: 'в проекте не включён YouTube Data API v3 (APIs & Services → Library → Enable)', SERVICE_DISABLED: 'в проекте не включён YouTube Data API v3 (APIs & Services → Library → Enable)',
+      quotaExceeded: 'дневная квота ключа закончилась — сработает завтра или с новым ключом', rateLimitExceeded: 'слишком частые запросы — подождите минуту',
+      ipRefererBlocked: 'у ключа есть ограничения по сайту или IP — снимите их', API_KEY_HTTP_REFERRER_BLOCKED: 'у ключа есть ограничения по сайту или IP — снимите их'
+    };
+    $('checkKey').onclick = function () {
+      var out = $('keyResult'), key = $('youtubeApiKey').value.trim();
+      out.className = 'note';
+      if (!key) { out.textContent = 'сначала впишите ключ'; return; }
+      out.textContent = 'проверяю…';
+      fetch('https://www.googleapis.com/youtube/v3/channels?part=id&forHandle=%40YouTube&key=' + encodeURIComponent(key)).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.error) {
+          var e = d.error, reason = (e.errors && e.errors[0] && e.errors[0].reason) || (e.details && e.details[0] && e.details[0].reason) || e.status || '';
+          out.className = 'note bad'; out.textContent = '✗ ' + (KEY_ERRORS[reason] || e.message || 'неизвестная ошибка');
+        } else { out.className = 'note ok'; out.textContent = '✓ ключ работает'; }
+      }, function () { out.className = 'note bad'; out.textContent = '✗ не удалось связаться с Google (нет интернета или запрос заблокирован)'; });
+    };
+
+    // ——— Панель оформления (wpanel.js): связь с хранилищем ———
+    // Hub накладывает присланное поверх сохранённого поле за полем, поэтому «вернуть по умолчанию» —
+    // это отправка значения по умолчанию, а не удаление ключа.
+    function currentStyle() { return SAW.clean(SCHEMA, cfg); }
+    function replaceStyle(diffValues) {
+      var full = SAW.clean(SCHEMA, diffValues), cur = currentStyle(), patch = {};
+      Object.keys(full).forEach(function (k) { if (full[k] !== cur[k]) patch[k] = full[k]; });
+      save(patch); refreshPreview();
+    }
+    var ctl = {
+      get: function () { return SAW.diff(SCHEMA, currentStyle()); },
+      set: function (patch) { save(patch); refreshPreview(); },
+      del: function (keys) { var d = {}; keys.forEach(function (k) { d[k] = DEFAULTS[k]; }); save(d); refreshPreview(); },
+      preset: function (preset) { replaceStyle(SAW.applyPreset(DEF, ctl.get(), preset)); },
+      replace: function (values) { replaceStyle(values); }
+    };
+    var panel = SAW.panel.mount($('panel'), DEF, ctl);
+
+    // ——— Ссылка для OBS ———
+    // Hub раздаёт папку виджета по http://127.0.0.1:ПОРТ/w/streamassist-chat/… (локальный сервер Hub, порты 47821–47830).
+    // Ищем его по /ping. Если сервера нет (старый Hub) — file://-ссылка: Twitch в OBS работает, YouTube без ключа так не читается.
+    function withObsFlag(url) { return url.split(/[?#]/)[0] + '?view=obs'; }
+    function hubObsParam() {
+      var u = new URLSearchParams(location.search).get('__obsUrl');
+      return u && /^(file:\/\/|http:\/\/(127\.0\.0\.1|localhost)[:\/])/i.test(u) ? withObsFlag(u) : null;
+    }
+    function obsFileUrl() {
+      var fromHub = hubObsParam();
+      if (fromHub) return fromHub;
+      var href = siblingUrl('index.html');
+      var m = href.match(/^https?:\/\/(?:asset|tauri)\.localhost\/(.+)$/i) || href.match(/^(?:asset|tauri):\/\/localhost\/(.+)$/i);
+      if (!m) return withObsFlag(href);
+      var path = m[1];
+      try { path = decodeURIComponent(path); } catch (e) { /* оставляем как есть */ }
+      path = path.replace(/\\/g, '/');
+      return withObsFlag('file://' + encodeURI(path.charAt(0) === '/' ? path : '/' + path));
+    }
+    function findHubLocalServer() {
+      var ports = [];
+      for (var p = 47821; p <= 47830; p++) ports.push(p);
+      return ports.reduce(function (chain, port) {
+        return chain.then(function (found) {
+          if (found) return found;
+          var ctrl = new AbortController(), t = setTimeout(function () { ctrl.abort(); }, 700);
+          return fetch('http://127.0.0.1:' + port + '/ping', { signal: ctrl.signal }).then(function (r) { clearTimeout(t); return r.json(); }).then(function (d) {
+            return d && d.app === 'foxfire-hub' ? 'http://127.0.0.1:' + port + '/w/' + WIDGET_ID + '/index.html?view=obs' : null;
+          }, function () { clearTimeout(t); return null; });
+        });
+      }, Promise.resolve(null));
+    }
+    // Копирование в несколько шагов: внутри вложенного окна Hub обычный буфер обмена браузера часто запрещён.
+    function copyText(text) {
+      return Promise.resolve().then(function () { return navigator.clipboard.writeText(text); }).then(function () { return true; }, function () {
+        return Promise.resolve().then(function () { return window.__TAURI__.clipboard.writeText(text); }).then(function () { return true; }, function () {
+          try {
+            var ta = document.createElement('textarea'); ta.value = text; ta.style.cssText = 'position:fixed;opacity:0';
+            document.body.appendChild(ta); ta.focus(); ta.select();
+            var ok = document.execCommand('copy'); ta.remove(); return ok;
+          } catch (e) { return false; }
+        });
+      });
+    }
+    $('copyObs').onclick = function () {
+      var note = $('obsNote'); note.className = 'note'; note.textContent = 'ищу Hub…';
+      findHubLocalServer().then(function (local) {
+        var link = local || obsFileUrl(), lb = $('obslink');
+        lb.value = link; lb.style.display = 'block';
+        if (/asset\.localhost|^asset:/i.test(link)) {
+          note.className = 'note bad';
+          note.textContent = 'Не удалось собрать рабочую ссылку: получился адрес asset.localhost, он открывается только внутри Hub. Нужен Hub с локальным сервером.';
+          return;
+        }
+        return copyText(link).then(function (ok) {
+          if (ok) {
+            note.className = 'note ok';
+            note.textContent = local ? 'Ссылка скопирована ✓ Постоянная: настройки подхватываются сами.'
+              : 'Скопирована file://-ссылка. Twitch в OBS работать будет, а YouTube без ключа — нет (нужен Hub с локальным сервером или API-ключ).';
+          } else { note.className = 'note bad'; note.textContent = 'Не удалось скопировать автоматически — выделите ссылку ниже и скопируйте вручную.'; lb.select(); }
+        });
+      });
+    };
+
+    applyConn();
+  }
+})();
+</script>
+</body>
+</html>

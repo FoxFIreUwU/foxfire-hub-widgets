@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Чат StreamAssist — FoxFire Hub</title>
+<style>
+  /* Классы страницы начинаются с "sahub-", сам виджет рисует wchat.js (классы "sachat-…"),
+     поэтому со стилями FoxFire Hub и других виджетов ничего не пересекается (SYSTEM_WIDGET_STYLE.md, раздел 6). */
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+  /* прозрачный фон — OBS покажет только сам чат; в окне Hub (кнопка «Запустить») фон нужен, иначе его не видно */
+  body.sahub-window { background: #0b0b10; }
+  #sahub-stage { position: absolute; left: 0; top: 0; right: 0; bottom: 0; }
+  #sahub-hint { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: 80%; text-align: center;
+    font: 14px/1.5 system-ui, "Segoe UI", sans-serif; color: #b9b4c8; display: none; padding: 12px 16px; }
+  #sahub-bar { position: absolute; top: 8px; right: 10px; display: none; gap: 6px; font: 11px/1 system-ui, "Segoe UI", sans-serif; z-index: 5; }
+  body.sahub-window #sahub-bar { display: flex; }
+  .sahub-pill { display: none; align-items: center; gap: 6px; padding: 5px 9px; border-radius: 12px; color: #c9c9d6;
+    background: rgba(0, 0, 0, .55); max-width: 280px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sahub-pill.on { display: inline-flex; }
+  .sahub-dot { width: 7px; height: 7px; border-radius: 50%; background: #5a5148; flex: none; }
+  .sahub-dot.connected { background: #22c55e; } .sahub-dot.connecting { background: #eab308; } .sahub-dot.error { background: #ef4444; }
+</style>
+</head>
+<body>
+  <div id="sahub-stage"></div>
+  <div id="sahub-bar">
+    <span class="sahub-pill" id="sahub-p-twitch"><i class="sahub-dot"></i><span>Twitch</span></span>
+    <span class="sahub-pill" id="sahub-p-youtube"><i class="sahub-dot"></i><span>YouTube</span></span>
+  </div>
+  <div id="sahub-hint"></div>
+
+<!--INLINE foxfirehub-bridge.js-->
+<!--INLINE wstyle.js-->
+<!--INLINE wchat.js-->
+<!--INLINE sachat-hub.js-->
+  <script>
+  (function () {
+    'use strict';
+    // ——— Соседние файлы ———
+    // Внутри Hub адрес страницы — asset.localhost/<путь целиком в percent-encoding, где «/» это %2F или %5C>, поэтому обычное
+    // <script src="wchat.js"> там НЕ найдётся (так же, как config.js у unified-chat). Режем адрес по последнему разделителю
+    // любого вида сами. Все файлы виджета лежат в одной папке — без вложенных папок.
+    function siblingUrl(name) {
+      var href = location.href.split(/[?#]/)[0], cut = -1, re = /%5C|%2F|\//gi, m;
+      while ((m = re.exec(href))) cut = m.index + m[0].length;
+      return (cut < 0 ? href + '/' : href.slice(0, cut)) + name;
+    }
+    function loadScript(name, bust) {
+      return new Promise(function (resolve, reject) {
+        var el = document.createElement('script'), done = false;
+        function finish(ok) { if (done) return; done = true; if (!ok) { el.remove(); reject(new Error(name)); } else resolve(); }
+        el.onload = function () { finish(true); };
+        el.onerror = function () { finish(false); };
+        setTimeout(function () { finish(false); }, 8000);
+        el.src = siblingUrl(name) + (bust ? '?t=' + Date.now() : '');
+        document.head.appendChild(el);
+      });
+    }
+    function hint(text) {
+      var h = document.getElementById('sahub-hint');
+      h.textContent = text || ''; h.style.display = text ? 'block' : 'none';
+    }
+    // config.js пишет Hub при каждом изменении настроек; читаем обычным <script> — так работает и из file:// в OBS.
+    function loadConfigFile(bust) {
+      return new Promise(function (resolve) {
+        try { delete window.__FOXFIRE_WIDGET_CONFIG__; } catch (e) { window.__FOXFIRE_WIDGET_CONFIG__ = undefined; }
+        loadScript('config.js', bust).then(function () {
+          var v = window.__FOXFIRE_WIDGET_CONFIG__;
+          document.querySelectorAll('script[src*="config.js"]').forEach(function (s) { s.remove(); });
+          resolve(v && typeof v === 'object' ? v : null);
+        }, function () { resolve(null); });
+      });
+    }
+
+    // Все скрипты вшиты выше (tools/build.py): подгружать соседние файлы нельзя, во вложенных окнах Hub это не работает.
+    start();
+
+    function start() {
+      var SAW = window.SAW, CHAT = SAW.chat, DEF = SAW.get('chat'), HUB = window.SAHub, BR = window.FoxFireBridge;
+      var WIDGET_ID = 'streamassist-chat';
+      var params = new URLSearchParams(location.search), query = {};
+      params.forEach(function (v, k) { query[k] = v; });
+
+      // Режим: ?view=obs — всегда прозрачный оверлей. Иначе внутри Hub (окно, открытое кнопкой «Запустить») — окно с фоном,
+      // а как файл или по ссылке http://127.0.0.1 (OBS, браузер) — прозрачный оверлей.
+      var inHubWindow = query.view !== 'obs' && BR.hasTauri() && !BR.isEmbeddedInHub();
+      document.body.classList.toggle('sahub-window', inHubWindow);
+      var opts = { mode: inHubWindow ? 'app' : 'obs' };   // размытие фона — только в окне Hub: в OBS оно рисует чёрный блок
+
+      var stage = document.getElementById('sahub-stage');
+      var raw = Object.assign({}, query);
+      var widget = CHAT.create(stage, DEF.migrate(raw), opts);
+      var styleKey = '';
+
+      // ——— Статус подключения (виден только в окне Hub) ———
+      var pills = { twitch: document.getElementById('sahub-p-twitch'), youtube: document.getElementById('sahub-p-youtube') };
+      var NAMES = { twitch: 'Twitch', youtube: 'YouTube' };
+      function onStatus(platform, state, text) {
+        var p = pills[platform];
+        if (!p) return;
+        p.classList.toggle('on', state !== 'idle' || !!text);
+        p.firstChild.className = 'sahub-dot ' + (state === 'idle' ? '' : state);
+        p.lastChild.textContent = NAMES[platform] + (text ? ': ' + text : '');
+        p.title = p.lastChild.textContent;
+        if (state === 'error') console.warn('streamassist-chat [' + platform + ']: ' + text);
+      }
+
+      var conn = HUB.createConnections(null, { onMessage: function (m) { widget.push(m); }, onStatus: onStatus });
+
+      function apply() {
+        var vals = DEF.migrate(raw);
+        var key = JSON.stringify(SAW.clean(CHAT.schema, vals));
+        if (key !== styleKey) { styleKey = key; widget.update(vals, opts); }
+        var c = HUB.connFrom(raw);
+        conn.apply(c);
+        var any = !!(HUB.normTwitch(c.twitchChannel) || c.youtubeChannel || c.youtubeVideoIdOverride);
+        hint(any ? '' : 'Укажите канал Twitch и/или YouTube в настройках виджета (FoxFire Hub → «Загруженное»).');
+      }
+      // Пачка изменений (например, выбор готового стиля — десятки полей сразу) применяется один раз.
+      var timer = 0;
+      function schedule() { clearTimeout(timer); timer = setTimeout(apply, 60); }
+
+      window.addEventListener('resize', function () { requestAnimationFrame(function () { widget.fit(); }); });
+
+      // ——— Настройки: query-параметры (первый запуск) → config.js (его пишет Hub, ссылка в OBS постоянная) → живые события Hub ———
+      var lastFile = '';
+      function readFile(first) {
+        return loadConfigFile(!first).then(function (file) {
+          if (!file) return false;
+          var json = JSON.stringify(file);
+          if (json === lastFile) return false;
+          lastFile = json;
+          raw = Object.assign({}, query, file);
+          return true;
+        });
+      }
+      readFile(true).then(function () {
+        apply();
+        setInterval(function () { readFile(false).then(function (changed) { if (changed) schedule(); }); }, 3000);
+      });
+      // Окно, открытое кнопкой «Запустить», узнаёт о правках сразу (config.js подхватится позже, но без задержки приятнее).
+      BR.onLiveConfigUpdate(WIDGET_ID, function (u) { if (u && typeof u.key === 'string') { raw[u.key] = u.value; schedule(); } });
+      window.addEventListener('pagehide', function () { conn.stop(); });
+    }
+  })();
+  </script>
+</body>
+</html>

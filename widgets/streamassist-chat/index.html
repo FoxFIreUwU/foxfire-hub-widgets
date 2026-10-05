@@ -30,6 +30,1714 @@
   </div>
   <div id="sahub-hint"></div>
 
+<script>
+/* foxfirehub-bridge.js — общий помощник для виджетов FoxFire Hub (v1)
+ *
+ * Просто скопируй этот файл в папку своего виджета (рядом с index.html и/или
+ * settings.html) и подключи тегом:
+ *   <script src="foxfirehub-bridge.js"><\/script>
+ *
+ * Даёт объект window.FoxFireBridge с несколькими независимыми функциями —
+ * ничего не обязательно использовать целиком, бери только то, что нужно.
+ * Ничего не ломает, если файл вообще не подключать: это просто обёртка над
+ * тем же самым публичным контрактом (query-параметры, postMessage, Tauri-
+ * событие), который и так можно реализовать вручную — см. SYSTEM_WIDGET_STYLE.md,
+ * раздел 11, если хочешь понимать, что происходит "под капотом".
+ *
+ * Полностью самостоятельный файл: без зависимостей, без сборки, обычный
+ * vanilla JS, работает и в index.html (окно виджета/оверлей OBS), и в
+ * settings.html (встроенная страница настроек).
+ */
+(function (global) {
+  "use strict";
+
+  function readBool(v, fallback) {
+    if (v === undefined || v === null) return fallback;
+    return v === true || v === "true";
+  }
+  function readNum(v, fallback) {
+    var n = Number.parseFloat(v);
+    return Number.isFinite(n) ? n : fallback;
+  }
+
+  /**
+   * Читает текущие query-параметры страницы в объект, типизируя каждое поле
+   * по типу значения в defaults (boolean/number/string) — так же, как уже
+   * делает и index.html, и settings.html вручную, только в одном месте.
+   *
+   *   const config = FoxFireBridge.getInitialConfig(DEFAULTS);
+   */
+  function getInitialConfig(defaults) {
+    var params = new global.URLSearchParams(global.location.search);
+    var cfg = {};
+    Object.keys(defaults || {}).forEach(function (key) {
+      cfg[key] = defaults[key];
+      if (!params.has(key)) return;
+      var raw = params.get(key);
+      if (typeof defaults[key] === "boolean") cfg[key] = readBool(raw, defaults[key]);
+      else if (typeof defaults[key] === "number") cfg[key] = readNum(raw, defaults[key]);
+      else cfg[key] = raw;
+    });
+    return cfg;
+  }
+
+  // Запущена ли страница внутри FoxFire Hub вообще (окно виджета, открытое
+  // кнопкой "Запустить", ИЛИ встроенная страница настроек) — по наличию
+  // window.__TAURI__ (см. withGlobalTauri в tauri.conf.json самого Hub).
+  // Как обычный файл (например, вставленный ссылкой в источник "Браузер" в
+  // OBS) — window.__TAURI__ не существует.
+  function hasTauri() {
+    // Tauri v1: __TAURI__.tauri; Tauri v2: __TAURI__.core (или __TAURI_INTERNALS__).
+    return !!(global.__TAURI__ && global.__TAURI__.event && (global.__TAURI__.tauri || global.__TAURI__.core)) || !!global.__TAURI_INTERNALS__;
+  }
+
+  // Встроена ли именно ЭТА страница как <iframe> внутрь окна Hub (так
+  // открывается settingsEntry во вкладке "Загруженное") — отличается от
+  // hasTauri(): окно виджета (index.html), запущенное кнопкой "Запустить",
+  // тоже работает внутри Hub и видит window.__TAURI__, но оно НЕ встроено в
+  // родительский документ как iframe, у него нет своего "родителя" в этом
+  // смысле — isEmbeddedInHub() для него вернёт false, а hasTauri() — true.
+  function isEmbeddedInHub() {
+    try {
+      return !!(global.parent && global.parent !== global);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  var CONFIG_UPDATE_EVENT = "foxfirehub:config-updated"; // Tauri-событие, Hub -> уже открытое окно виджета
+  var SAVE_MESSAGE_TYPE = "foxfirehub:settings-saved"; // postMessage, встроенная страница настроек -> Hub
+
+  /**
+   * Сохраняет (или обновляет частично) настройки в Hub — работает только
+   * если страница открыта как settingsEntry внутри вкладки "Загруженное"
+   * (см. isEmbeddedInHub). Можно слать весь конфиг целиком или только
+   * изменившиеся поля — Hub накладывает присланное поверх уже сохранённого.
+   * Возвращает true, если сообщение реально было кому отправить.
+   *
+   *   FoxFireBridge.saveConfig("my-widget-id", { textColor: "#fff" });
+   */
+  function saveConfig(widgetId, config) {
+    if (!isEmbeddedInHub()) return false;
+    global.parent.postMessage({ type: SAVE_MESSAGE_TYPE, widgetId: widgetId, config: config }, "*");
+    return true;
+  }
+
+  /**
+   * Подписка на ЖИВЫЕ изменения настроек — для окна виджета (index.html),
+   * уже запущенного кнопкой "Запустить", когда пользователь параллельно
+   * меняет настройки в другом месте (вкладка "Загруженное", открытая
+   * одновременно). Без этого окно подхватило бы новые значения только на
+   * следующий перезапуск — начальный конфиг читается из query-параметров
+   * один раз, при создании окна.
+   *
+   * callback вызывается по одному изменённому полю за раз:
+   *   const stop = FoxFireBridge.onLiveConfigUpdate("my-widget-id", ({ key, value }) => {
+   *     config[key] = value;
+   *     applyConfig(config); // сам решаешь, что делать с изменением
+   *   });
+   *   // stop() — отписаться, если понадобится
+   *
+   * Работает только внутри FoxFire Hub (нужен window.__TAURI__) — вне Hub
+   * (файл открыт отдельно, как в источнике "Браузер" OBS) просто ничего не
+   * делает, это нормальный случай, а не ошибка.
+   */
+  function onLiveConfigUpdate(widgetId, callback) {
+    if (!hasTauri() || typeof callback !== "function") {
+      return function unsubscribe() {};
+    }
+    var unlisten = null;
+    var stopped = false;
+    global.__TAURI__.event
+      .listen(CONFIG_UPDATE_EVENT, function (event) {
+        var payload = event && event.payload;
+        if (!payload || payload.widgetId !== widgetId) return;
+        callback({ key: payload.key, value: payload.value });
+      })
+      .then(function (fn) {
+        if (stopped) fn();
+        else unlisten = fn;
+      })
+      .catch(function (err) {
+        console.warn("FoxFireBridge: не удалось подписаться на живые обновления настроек", err);
+      });
+    return function unsubscribe() {
+      stopped = true;
+      if (unlisten) unlisten();
+    };
+  }
+
+  /**
+   * Необязательный снимок текущей темы Hub (акцентный цвет пользователя,
+   * скругление, масштаб текста, светлая/тёмная/системная) — Hub кладёт его
+   * сам в query-параметр __hubTheme, когда открывает settingsEntry или
+   * запускает окно виджета (см. utils/appearance.ts → themeBridgeSnapshot в
+   * самом Hub). Использовать не обязательно — просто способ подхватить
+   * личный акцент пользователя вместо жёстко зашитого цвета, если у виджета
+   * нет своей фиксированной фирменной палитры.
+   *
+   *   const theme = FoxFireBridge.getHubTheme();
+   *   // { accent: "#e2820a", accentDark: "#ba6c08", radius: "16px", textScale: "100%", mode: "system" }
+   */
+  function getHubTheme() {
+    var params = new global.URLSearchParams(global.location.search);
+    var raw = params.get("__hubTheme");
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
+   * Кладёт тему Hub (см. getHubTheme) как CSS-переменные на :root:
+   * --hub-accent, --hub-accent-dark, --hub-radius, --hub-text-scale, плюс
+   * атрибут data-hub-theme="dark|light|system". В своём CSS используй их
+   * через var(--hub-accent, #свой-цвет-по-умолчанию) — тогда всё продолжит
+   * работать даже если тема недоступна (страница открыта не из Hub, или из
+   * старой версии Hub, которая ещё не шлёт __hubTheme).
+   * Возвращает true, если тема была и переменные выставлены.
+   */
+  function applyHubTheme(theme) {
+    theme = theme || getHubTheme();
+    if (!theme) return false;
+    var root = global.document.documentElement.style;
+    if (theme.accent) root.setProperty("--hub-accent", theme.accent);
+    if (theme.accentDark) root.setProperty("--hub-accent-dark", theme.accentDark);
+    if (theme.radius) root.setProperty("--hub-radius", theme.radius);
+    if (theme.textScale) root.setProperty("--hub-text-scale", theme.textScale);
+    if (theme.mode) global.document.documentElement.setAttribute("data-hub-theme", theme.mode);
+    return true;
+  }
+
+  global.FoxFireBridge = {
+    getInitialConfig: getInitialConfig,
+    hasTauri: hasTauri,
+    isEmbeddedInHub: isEmbeddedInHub,
+    saveConfig: saveConfig,
+    onLiveConfigUpdate: onLiveConfigUpdate,
+    getHubTheme: getHubTheme,
+    applyHubTheme: applyHubTheme
+  };
+})(window);
+</script>
+<script>
+/* wstyle.js — ОБЩИЙ ФОРМАТ СТИЛЯ ВИДЖЕТОВ (SAW, версия 1).
+   Один и тот же файл работает и в окне программы (предпросмотр, панель настроек),
+   и в оверлее для OBS. Здесь нет ни Tauri, ни сети, ни обращений к странице:
+   только описание настроек (схема), проверка значений и перенос стиля в JSON.
+
+   Как устроен формат (подробно — docs/WIDGET_FORMAT.md):
+     • Виджет описывается СХЕМОЙ: список разделов, в каждом — поля (число, цвет, список…).
+       Каждый раздел лежит либо в группе «Общие» (lvl 'g'), либо в «Расширенные» (lvl 'a').
+     • Значения виджета — плоский объект { ключ: значение }. Хранятся только отличия от
+       значений по умолчанию, поэтому старые сохранения не ломаются при добавлении полей.
+     • clean() приводит любые чужие значения к безопасным: число — в пределах min…max,
+       цвет — только #RRGGBB, список — только из разрешённых вариантов, текст — без
+       управляющих символов. Так импортированный пресет не может внести чужой CSS.
+     • Виджет = { id, name, v, schema, presets, ... } регистрируется через SAW.register().
+   Общие «кирпичики» (SAW.blocks) — одинаковые разделы для всех виджетов: блок-подложка
+   (заливка, рамка, углы, тень, отступы), текст, значок/аватар. Новый виджет берёт их готовыми. */
+(function (root) {
+  'use strict';
+
+  var FORMAT = 'sa-widget-style';
+  var VERSION = 1;
+  var HEX6 = /^#[0-9a-fA-F]{6}$/;
+  var widgets = {}, kinds = {};
+
+  // ——— Поля ———————————————————————————————————————————————————————————————
+  // Каждое поле: { key, label, type: num|color|select|bool|text, def, ... , when(values) }
+  function num(key, label, def, min, max, o) {
+    o = o || {};
+    return { key: key, label: label, type: 'num', def: def, min: min, max: max,
+      step: o.step || 1, unit: o.unit || '', hint: o.hint || '', when: o.when || null };
+  }
+  function color(key, label, def, o) {
+    o = o || {};
+    return { key: key, label: label, type: 'color', def: def, hint: o.hint || '', when: o.when || null };
+  }
+  function select(key, label, def, options, o) {
+    o = o || {};
+    return { key: key, label: label, type: 'select', def: def, options: options, hint: o.hint || '', when: o.when || null };
+  }
+  function bool(key, label, def, o) {
+    o = o || {};
+    return { key: key, label: label, type: 'bool', def: !!def, hint: o.hint || '', when: o.when || null };
+  }
+  function text(key, label, def, o) {
+    o = o || {};
+    return { key: key, label: label, type: 'text', def: def, max: o.max || 200, multi: !!o.multi,
+      hint: o.hint || '', when: o.when || null };
+  }
+  function section(lvl, id, title, fields, o) {
+    return { lvl: lvl, id: id, title: title, fields: fields, hint: (o && o.hint) || '', closed: !!(o && o.closed) };
+  }
+
+  // ——— Работа со схемой ———————————————————————————————————————————————————
+  function allFields(schema) {
+    var out = [];
+    schema.sections.forEach(function (s) { s.fields.forEach(function (f) { out.push(f); }); });
+    return out;
+  }
+  function defaults(schema) {
+    var d = {};
+    allFields(schema).forEach(function (f) { d[f.key] = f.def; });
+    return d;
+  }
+  function cleanText(s, max) {
+    // без управляющих символов; < и > тоже убираем — в разметку этот текст не попадает,
+    // но так проще убедиться, что он безопасен везде
+    return String(s).replace(/[\u0000-\u001f\u007f<>]/g, '').slice(0, max);
+  }
+  function cleanOne(f, raw) {
+    if (raw === undefined || raw === null) return f.def;
+    switch (f.type) {
+      case 'num': {
+        var n = typeof raw === 'number' ? raw : parseFloat(raw);
+        if (!isFinite(n)) return f.def;
+        n = Math.min(f.max, Math.max(f.min, n));
+        var st = f.step < 1 ? 1 / f.step : 1;      // шаг 0.1 → округляем до десятых
+        return Math.round(n * st) / st;
+      }
+      case 'color': return typeof raw === 'string' && HEX6.test(raw) ? raw.toLowerCase() : f.def;
+      case 'bool': return raw === true || raw === 1 || raw === '1' || raw === 'true';
+      case 'select': {
+        var ok = f.options.some(function (o) { return o[0] === raw; });
+        return ok ? raw : f.def;
+      }
+      case 'text': return typeof raw === 'string' ? cleanText(raw, f.max) : f.def;
+    }
+    return f.def;
+  }
+  // Полный набор значений: всё, чего нет или что испорчено, берётся по умолчанию.
+  function clean(schema, raw) {
+    var out = {};
+    raw = raw && typeof raw === 'object' ? raw : {};
+    allFields(schema).forEach(function (f) { out[f.key] = cleanOne(f, raw[f.key]); });
+    return out;
+  }
+  // Только отличия от умолчаний — именно это хранится и переносится.
+  function diff(schema, values) {
+    var out = {};
+    allFields(schema).forEach(function (f) {
+      var v = values[f.key];
+      if (v !== undefined && v !== f.def) out[f.key] = v;
+    });
+    return out;
+  }
+  function fieldVisible(f, values) {
+    try { return !f.when || !!f.when(values); } catch (e) { return true; }
+  }
+
+  // ——— Перенос стиля (JSON) ———————————————————————————————————————————————
+  function exportDoc(id, schema, values) {
+    return { format: FORMAT, v: VERSION, widget: id, values: diff(schema, clean(schema, values)) };
+  }
+  // Возвращает { ok:true, values } или { ok:false, error } (текст ошибки — для пользователя).
+  function importDoc(id, schema, textOrObj) {
+    var doc = textOrObj;
+    if (typeof textOrObj === 'string') {
+      if (textOrObj.length > 200000) return { ok: false, error: 'Текст слишком большой для стиля' };
+      try { doc = JSON.parse(textOrObj); } catch (e) { return { ok: false, error: 'Это не JSON: проверьте, что скопирован весь текст стиля' }; }
+    }
+    if (!doc || typeof doc !== 'object' || doc.format !== FORMAT) return { ok: false, error: 'Это не стиль виджета StreamAssist' };
+    if (doc.widget !== id) return { ok: false, error: 'Этот стиль сделан для другого виджета («' + cleanText(doc.widget, 40) + '»)' };
+    if (typeof doc.v !== 'number' || doc.v > VERSION) return { ok: false, error: 'Стиль сделан в более новой версии программы' };
+    return { ok: true, values: diff(schema, clean(schema, doc.values)) };
+  }
+
+  // ——— Цвета и числа для CSS ——————————————————————————————————————————————
+  function rgba(hex, alphaPct) {
+    var h = HEX6.test(hex) ? hex : '#000000';
+    var a = Math.min(100, Math.max(0, +alphaPct));
+    if (!isFinite(a)) a = 100;
+    return 'rgba(' + parseInt(h.slice(1, 3), 16) + ',' + parseInt(h.slice(3, 5), 16) + ',' +
+      parseInt(h.slice(5, 7), 16) + ',' + (Math.round(a * 10) / 1000) + ')';
+  }
+  // Безопасное имя шрифта из свободного поля: буквы, цифры, пробел, дефис.
+  function fontName(s) {
+    var n = String(s || '').replace(/[^\p{L}\p{N} \-]/gu, '').trim().slice(0, 60);
+    return n;
+  }
+
+  // ——— Общие разделы-«кирпичики» ——————————————————————————————————————————
+  // p — префикс ключей, чтобы у разных частей одного виджета не было совпадений.
+  var blocks = {
+    // Подложка: заливка, рамка, углы, тень, внутренняя подсветка, отступы, размытие.
+    box: function (p, d) {
+      d = d || {};
+      return [
+        section('a', p + 'Fill', 'Заливка', [
+          select(p + 'FillType', 'Тип заливки', d.fillType || 'solid', [['solid', 'Цвет'], ['gradient', 'Градиент'], ['none', 'Без заливки']]),
+          color(p + 'Fill', 'Цвет', d.fill || '#0b0b10'),
+          color(p + 'Fill2', 'Второй цвет градиента', d.fill2 || '#1d4fd8', { when: function (v) { return v[p + 'FillType'] === 'gradient'; } }),
+          num(p + 'Angle', 'Угол градиента', d.angle === undefined ? 90 : d.angle, 0, 360, { unit: '°', when: function (v) { return v[p + 'FillType'] === 'gradient'; } }),
+          num(p + 'FillOp', 'Непрозрачность', d.fillOp === undefined ? 85 : d.fillOp, 0, 100, { unit: '%' })
+        ]),
+        section('a', p + 'Border', 'Рамка', [
+          num(p + 'Bw', 'Толщина', d.bw || 0, 0, 16, { unit: 'px', step: 0.5 }),
+          color(p + 'Bc', 'Цвет', d.bc || '#ffffff'),
+          num(p + 'Bop', 'Непрозрачность', d.bop === undefined ? 30 : d.bop, 0, 100, { unit: '%' }),
+          select(p + 'Bs', 'Линия', d.bs || 'solid', [['solid', 'Сплошная'], ['dashed', 'Штрихи'], ['dotted', 'Точки'], ['double', 'Двойная (от 3 px)']])
+        ]),
+        section('a', p + 'Corners', 'Углы', [
+          bool(p + 'REach', 'Каждый угол отдельно', !!d.rEach),
+          num(p + 'R', 'Скругление', d.r === undefined ? 16 : d.r, 0, 120, { unit: 'px', when: function (v) { return !v[p + 'REach']; } }),
+          num(p + 'Rtl', 'Левый верхний', d.r === undefined ? 16 : d.r, 0, 120, { unit: 'px', when: function (v) { return !!v[p + 'REach']; } }),
+          num(p + 'Rtr', 'Правый верхний', d.r === undefined ? 16 : d.r, 0, 120, { unit: 'px', when: function (v) { return !!v[p + 'REach']; } }),
+          num(p + 'Rbr', 'Правый нижний', d.r === undefined ? 16 : d.r, 0, 120, { unit: 'px', when: function (v) { return !!v[p + 'REach']; } }),
+          num(p + 'Rbl', 'Левый нижний', d.r === undefined ? 16 : d.r, 0, 120, { unit: 'px', when: function (v) { return !!v[p + 'REach']; } })
+        ]),
+        section('a', p + 'Shadow', 'Тень', [
+          bool(p + 'ShOn', 'Включить тень', !!d.shOn),
+          num(p + 'ShX', 'Сдвиг по горизонтали', 0, -60, 60, { unit: 'px', when: function (v) { return !!v[p + 'ShOn']; } }),
+          num(p + 'ShY', 'Сдвиг по вертикали', 6, -60, 60, { unit: 'px', when: function (v) { return !!v[p + 'ShOn']; } }),
+          num(p + 'ShBlur', 'Размытие', 18, 0, 120, { unit: 'px', when: function (v) { return !!v[p + 'ShOn']; } }),
+          num(p + 'ShSpread', 'Растяжение', 0, -40, 80, { unit: 'px', when: function (v) { return !!v[p + 'ShOn']; } }),
+          color(p + 'ShColor', 'Цвет', '#000000', { when: function (v) { return !!v[p + 'ShOn']; } }),
+          num(p + 'ShOp', 'Непрозрачность', 45, 0, 100, { unit: '%', when: function (v) { return !!v[p + 'ShOn']; } })
+        ]),
+        section('a', p + 'Inner', 'Подсветка внутри (эффект стекла)', [
+          bool(p + 'InOn', 'Включить', !!d.inOn),
+          color(p + 'InColor', 'Цвет', '#ffffff', { when: function (v) { return !!v[p + 'InOn']; } }),
+          num(p + 'InOp', 'Непрозрачность', 18, 0, 100, { unit: '%', when: function (v) { return !!v[p + 'InOn']; } }),
+          num(p + 'InY', 'Сдвиг по вертикали', 1, -30, 30, { unit: 'px', when: function (v) { return !!v[p + 'InOn']; } }),
+          num(p + 'InBlur', 'Размытие', 0, 0, 60, { unit: 'px', when: function (v) { return !!v[p + 'InOn']; } }),
+          num(p + 'InSpread', 'Растяжение', 0, -20, 30, { unit: 'px', when: function (v) { return !!v[p + 'InOn']; } })
+        ], { hint: 'Светлая кромка внутри блока: заменяет размытие фона, которое в OBS не работает.' }),
+        section('a', p + 'Pad', 'Отступы внутри блока', [
+          num(p + 'Pt', 'Сверху', d.pt === undefined ? 8 : d.pt, 0, 120, { unit: 'px' }),
+          num(p + 'Pr', 'Справа', d.pr === undefined ? 14 : d.pr, 0, 120, { unit: 'px' }),
+          num(p + 'Pb', 'Снизу', d.pb === undefined ? 8 : d.pb, 0, 120, { unit: 'px' }),
+          num(p + 'Pl', 'Слева', d.pl === undefined ? 14 : d.pl, 0, 120, { unit: 'px' })
+        ]),
+        section('a', p + 'Blur', 'Размытие фона', [
+          num(p + 'Blur', 'Сила размытия', 0, 0, 40, { unit: 'px' })
+        ], { hint: 'В OBS размытие фона рисует чёрный блок (ошибка OBS), поэтому в оверлее и в предпросмотре оно не применяется. Используется только в окне программы.' })
+      ];
+    }
+  };
+
+  // ——— Реестр виджетов ————————————————————————————————————————————————————
+  // def: { id, name, v, schema:{ sections:[…] }, presets:[{id,name,values}], … }
+  function register(def) {
+    if (!def || !def.id || !def.schema || !def.schema.sections) throw new Error('SAW.register: нужен id и schema');
+    var ids = {};
+    allFields(def.schema).forEach(function (f) {
+      if (ids[f.key]) throw new Error('SAW.register: ключ «' + f.key + '» повторяется в виджете ' + def.id);
+      ids[f.key] = 1;
+    });
+    widgets[def.id] = def;
+    if (def.kind) kinds[def.kind] = def.id;
+    return def;
+  }
+  // Применить готовый стиль: всё оформление сбрасывается к умолчанию и заменяется стилем,
+  // а «настройки поведения» (def.keep — фильтры, число сообщений, масштаб) остаются как были.
+  function applyPreset(def, current, preset) {
+    var out = {};
+    (def.keep || []).forEach(function (k) { if (current && current[k] !== undefined) out[k] = current[k]; });
+    var over = diff(def.schema, clean(def.schema, preset.values));
+    Object.keys(over).forEach(function (k) { if ((def.keep || []).indexOf(k) < 0) out[k] = over[k]; });
+    return out;
+  }
+
+  root.SAW = {
+    FORMAT: FORMAT, VERSION: VERSION,
+    F: { num: num, color: color, select: select, bool: bool, text: text, section: section },
+    blocks: blocks,
+    allFields: allFields, defaults: defaults, clean: clean, diff: diff, fieldVisible: fieldVisible,
+    exportDoc: exportDoc, importDoc: importDoc,
+    rgba: rgba, fontName: fontName, cleanText: cleanText,
+    register: register, applyPreset: applyPreset,
+    forKind: function (k) { return widgets[kinds[k]] || null; },
+    get: function (id) { return widgets[id] || null; },
+    has: function (id) { return !!widgets[id]; },
+    list: function () { return Object.keys(widgets); }
+  };
+  if (typeof module !== 'undefined' && module.exports) module.exports = root.SAW;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>
+/* wchat.js — виджет «Чат» на общем формате стиля (wstyle.js).
+   Файл общий для окна программы (предпросмотр) и оверлея OBS: никаких вызовов Tauri и сети.
+   Сообщения приходят уже разобранными (ChatMessage из Rust: parts «текст / картинка», badges, kind…)
+   и строятся через createElement/textContent — чужая разметка в страницу попасть не может.
+
+   Состав:
+     SCHEMA   — все настройки (Общие / Расширенные), см. docs/WIDGET_FORMAT.md
+     PRESETS  — готовые стили (по присланным образцам)
+     compile  — значения → набор CSS-переменных и классов (чистая функция, есть тесты)
+     accept   — фильтр сообщений (чистая функция, есть тесты)
+     create   — живой виджет: push / update / clear / destroy
+   В OBS размытие фона (backdrop-filter) не применяется — mode 'obs' (по умолчанию). */
+(function (root) {
+  'use strict';
+  var SAW = root.SAW;
+  if (!SAW) throw new Error('wchat.js: сначала подключите wstyle.js');
+  var F = SAW.F, N = F.num, C = F.color, S = F.select, B = F.bool, T = F.text, SEC = F.section;
+
+  // ——— Схема ——————————————————————————————————————————————————————————————
+  // Вся подложка блока (заливка и градиент, рамка, углы, тень, подсветка, отступы, размытие) — в «Общих», целиком.
+  // Правило: одна тема — одна вкладка. Раньше цвет и градиент были в «Общих», а рамка и тень — в «Расширенных».
+  var box = SAW.blocks.box('bx', { fill: '#0b0b10', fillOp: 85, r: 16, pt: 8, pr: 14, pb: 8, pl: 14 });
+  var BOX_TITLES = { bxFill: 'Фон блока: заливка и градиент', bxBorder: 'Фон блока: рамка', bxCorners: 'Фон блока: углы',
+    bxShadow: 'Фон блока: тень', bxInner: 'Фон блока: подсветка внутри', bxPad: 'Фон блока: отступы внутри', bxBlur: 'Фон блока: размытие' };
+  // «Общие»: заливка, углы, рамка, тень, подсветка — всё, чем собирают вид блока. В «Расширенные» уходят отступы внутри
+  // и размытие фона (в OBS оно не работает) — их трогают редко. Раскрыта только заливка, остальное разворачивается по клику.
+  var BOX_ADV = { bxPad: 1, bxBlur: 1 };
+  box.forEach(function (s) {
+    s.lvl = BOX_ADV[s.id] ? 'a' : 'g'; s.title = BOX_TITLES[s.id] || s.title;
+    if (s.id !== 'bxFill') s.closed = true;
+  });
+  var boxG = box.filter(function (s) { return s.lvl === 'g'; }), boxA = box.filter(function (s) { return s.lvl === 'a'; });
+  var isInline = function (v) { return v.nameLine === 'inline'; };
+  var mediaOn = function (v) { return !!v.showMedia; };
+
+  // Значок площадки / аватар — всё про него в одном месте: показывать ли, сторона, высота, размер, цвета, рамка.
+  var MEDIA = [
+    SEC('g', 'media', 'Значок площадки / аватар', [
+      B('showMedia', 'Показывать значок площадки', true),
+      S('mSide', 'Сторона', 'auto', [['auto', 'Автоматически (как выравнивание блоков)'], ['left', 'Слева'], ['right', 'Справа']], { when: mediaOn,
+        hint: 'Автоматически: блоки прижаты влево или стоят по центру — значок слева, блоки прижаты вправо — справа. В этом режиме вместе со значком зеркально меняются отступы, градиент, углы и сдвиг тени. Если выбрать сторону вручную, всё применяется как задано, без зеркала.' }),
+      S('mAlign', 'По высоте блока', 'center', [['start', 'Сверху'], ['center', 'По центру'], ['end', 'Снизу']], { when: mediaOn }),
+      S('mKind', 'Что показывать', 'platform', [['platform', 'Значок площадки'], ['letter', 'Первая буква ника']], { when: mediaOn }),
+      N('mSize', 'Размер', 40, 12, 160, { unit: 'px', when: mediaOn }),
+      S('mShape', 'Форма', 'circle', [['circle', 'Круг'], ['rounded', 'Скруглённый квадрат'], ['square', 'Квадрат']], { when: mediaOn }),
+      N('mRadius', 'Скругление квадрата', 10, 0, 80, { unit: 'px', when: function (v) { return v.showMedia && v.mShape === 'rounded'; } }),
+      N('mGap', 'Расстояние до текста', 12, 0, 80, { unit: 'px', when: mediaOn }),
+      B('mUsePlat', 'Фон — цвет площадки', false, { when: mediaOn }),
+      C('mBg', 'Цвет фона', '#ffffff', { when: function (v) { return v.showMedia && !v.mUsePlat; } }),
+      N('mBgOp', 'Непрозрачность фона', 12, 0, 100, { unit: '%', when: mediaOn }),
+      B('mIcPlat', 'Значок цветом площадки', false, { when: mediaOn }),
+      C('mIc', 'Цвет значка / буквы', '#ffffff', { when: function (v) { return v.showMedia && !v.mIcPlat; } }),
+      N('mBw', 'Рамка: толщина', 0, 0, 12, { unit: 'px', step: 0.5, when: mediaOn }),
+      C('mBc', 'Рамка: цвет', '#ffffff', { when: mediaOn }),
+      N('mBop', 'Рамка: непрозрачность', 20, 0, 100, { unit: '%', when: mediaOn })
+    ], { closed: true })
+  ];
+  // Значки ролей (стример, модератор, VIP…) — тоже целиком в одном месте.
+  var bdOn = function (v) { return !!v.showBadges; };
+  var BADGES = [
+    SEC('g', 'badges', 'Значки ролей (модератор, VIP…)', [
+      B('showBadges', 'Показывать значки ролей', true),
+      S('bdPos', 'Сторона', 'auto', [['auto', 'Автоматически (как выравнивание блоков)'], ['before', 'Слева от ника'], ['after', 'Справа от ника']], { when: bdOn,
+        hint: 'Автоматически: блоки прижаты влево или стоят по центру — значки слева от ника, блоки прижаты вправо — справа от ника.' }),
+      S('bdStyle', 'Вид', 'image', [['image', 'Картинки (стример, модератор — как на Twitch)'], ['icon', 'Цветной значок'], ['pill', 'Подпись'], ['dot', 'Точка']], { when: bdOn,
+        hint: 'Картинки есть у стримера, модератора и ведущего модератора. Остальные роли (VIP, подписчик…) в этом виде рисуются цветным значком — цвета ниже.' }),
+      N('bdSize', 'Размер', 16, 6, 60, { unit: 'px', when: bdOn }),
+      N('bdRadius', 'Скругление', 4, 0, 30, { unit: 'px', when: bdOn }),
+      C('bcBroadcaster', 'Цвет: стример', '#ffb703', { when: bdOn }),
+      C('bcModerator', 'Цвет: модератор', '#3ea6ff', { when: bdOn }),
+      C('bcVip', 'Цвет: VIP', '#c084fc', { when: bdOn }),
+      C('bcSub', 'Цвет: подписчик / спонсор', '#e2820a', { when: bdOn }),
+      C('bcPartner', 'Цвет: подтверждённый', '#22c55e', { when: bdOn }),
+      C('bcStaff', 'Цвет: сотрудник', '#ef4444', { when: bdOn })
+    ], { closed: true })
+  ];
+
+  var WEIGHTS = [['300', 'Тонкий'], ['400', 'Обычный'], ['500', 'Средний'], ['600', 'Полужирный'], ['700', 'Жирный'], ['800', 'Очень жирный'], ['900', 'Чёрный']];
+  var CASES = [['normal', 'Как написано'], ['upper', 'ЗАГЛАВНЫЕ'], ['lower', 'строчные']];
+  var FONTS = [['sys', 'Системный'], ['inter', 'Inter'], ['segoe', 'Segoe UI'], ['arial', 'Arial'], ['verdana', 'Verdana'], ['georgia', 'Georgia'], ['mono', 'Consolas'], ['impact', 'Impact'], ['custom', 'Свой (впишите название ниже)']];
+  var STACKS = {
+    sys: 'system-ui,"Segoe UI",Roboto,Arial,sans-serif',
+    inter: 'Inter,"Segoe UI",system-ui,sans-serif',
+    segoe: '"Segoe UI",system-ui,sans-serif',
+    arial: 'Arial,Helvetica,sans-serif',
+    verdana: 'Verdana,Geneva,sans-serif',
+    georgia: 'Georgia,"Times New Roman",serif',
+    mono: 'Consolas,"Courier New",monospace',
+    impact: 'Impact,"Arial Black",sans-serif'
+  };
+
+  // Порядок «Общих» — как стример настраивает чат: сначала общий вид, текст и ник, потом фон блока (рамка, тень…),
+  // значки, расположение, что показывать, особые сообщения (платные, действия модераторов, время), появление.
+  // Что нужно редко — в «Расширенных». Раскрыты только главные разделы, остальные разворачиваются по клику.
+  var SCHEMA = { sections: [
+    // ——— ОБЩИЕ ———
+    SEC('g', 'look', 'Внешний вид', [
+      S('layout', 'Как выглядят сообщения', 'bubbles', [['bubbles', 'Каждое — отдельный блок'], ['panel', 'Одна общая панель'], ['plain', 'Без фона (просто текст)']]),
+      N('scale', 'Масштаб всего виджета', 100, 50, 200, { unit: '%' }),
+      C('ac', 'Цвет акцента', '#ff7a1a'),
+      B('showEmotes', 'Смайлы картинками', true)
+    ]),
+    SEC('g', 'txt', 'Текст', [
+      S('ff', 'Шрифт', 'sys', FONTS),
+      T('ffCustom', 'Название своего шрифта', '', { max: 60, when: function (v) { return v.ff === 'custom'; }, hint: 'Шрифт должен быть установлен на этом компьютере: OBS берёт его из Windows.' }),
+      S('fw', 'Толщина', '500', WEIGHTS),
+      N('fs', 'Размер текста', 18, 10, 72, { unit: 'px' }),
+      C('textColor', 'Цвет текста', '#ffffff')
+    ]),
+    SEC('g', 'nick', 'Ник', [
+      S('nameLine', 'Где ник', 'stack', [['stack', 'Над текстом'], ['inline', 'В одной строке с текстом']]),
+      S('nameColorMode', 'Цвет ника', 'author', [['author', 'Как в чате'], ['platform', 'По площадке'], ['accent', 'Цвет акцента'], ['fixed', 'Один цвет']]),
+      C('nameColor', 'Цвет ника (один цвет)', '#ffffff', { when: function (v) { return v.nameColorMode === 'fixed'; } }),
+      N('nameSize', 'Размер ника', 16, 8, 72, { unit: 'px' }),
+      S('nameCase', 'Регистр ника', 'normal', CASES)
+    ])
+  ].concat(boxG).concat(MEDIA).concat(BADGES).concat([
+    SEC('g', 'place', 'Расположение', [
+      S('align', 'Выравнивание блоков', 'left', [['left', 'Слева'], ['center', 'По центру'], ['right', 'Справа']]),
+      S('dir', 'Новые сообщения', 'bottom', [['bottom', 'Снизу'], ['top', 'Сверху']])
+    ]),
+    SEC('g', 'flt', 'Какие сообщения', [
+      S('src', 'Площадка', 'all', [['all', 'Twitch и YouTube'], ['twitch', 'Только Twitch'], ['youtube', 'Только YouTube']]),
+      N('max', 'Сколько сообщений на экране', 12, 1, 40),
+      N('life', 'Убирать сообщение через (0 — не убирать)', 0, 0, 600, { unit: 'сек' }),
+      B('bots', 'Скрывать сообщения ботов', true),
+      B('hideCmd', 'Скрывать команды (начинаются с «!»)', true)
+    ]),
+    SEC('g', 'paid', 'Платные сообщения (суперчат, новые участники)', [
+      B('paidOn', 'Выделять', true),
+      C('paidFill', 'Цвет фона', '#ffb703', { when: function (v) { return v.paidOn; } }),
+      N('paidOp', 'Непрозрачность фона', 95, 0, 100, { unit: '%', when: function (v) { return v.paidOn; } }),
+      C('paidText', 'Цвет текста', '#1a1200', { when: function (v) { return v.paidOn; } })
+    ], { closed: true }),
+    SEC('g', 'sys', 'Действия модераторов', [
+      B('showSys', 'Показывать (бан, таймаут…)', false),
+      C('sysColor', 'Цвет', '#a0a0b0', { when: function (v) { return v.showSys; } }),
+      N('sysSize', 'Размер', 14, 6, 40, { unit: 'px', when: function (v) { return v.showSys; } }),
+      B('sysItalic', 'Курсив', true, { when: function (v) { return v.showSys; } })
+    ], { closed: true }),
+    SEC('g', 'time', 'Время сообщения', [
+      B('showTime', 'Показывать время', false),
+      S('tmFmt', 'Формат', '24', [['24', '14:36'], ['12', '2:36 PM']], { when: function (v) { return v.showTime; } }),
+      N('tmSize', 'Размер', 13, 6, 40, { unit: 'px', when: function (v) { return v.showTime; } }),
+      C('tmColor', 'Цвет', '#9aa0b4', { when: function (v) { return v.showTime; } })
+    ], { closed: true }),
+    SEC('g', 'anim', 'Появление', [
+      S('an', 'Анимация', 'up', [['up', 'Снизу'], ['down', 'Сверху'], ['left', 'Слева'], ['right', 'Справа'], ['scale', 'Увеличение'], ['fade', 'Плавно'], ['none', 'Без анимации']]),
+      N('adur', 'Длительность', 250, 0, 2000, { unit: 'мс', step: 10 })
+    ], { closed: true })
+  ]).concat([
+    // ——— РАСШИРЕННЫЕ ———
+    SEC('a', 'pos', 'Положение и размеры', [
+      S('anchor', 'Где держатся сообщения', 'bottom', [['top', 'Вверху виджета'], ['center', 'По центру'], ['bottom', 'Внизу виджета']]),
+      N('maxW', 'Максимальная ширина блока (0 — вся ширина)', 0, 0, 2400, { unit: 'px' }),
+      N('minW', 'Минимальная ширина блока', 0, 0, 2400, { unit: 'px' }),
+      N('gap', 'Расстояние между сообщениями', 8, 0, 120, { unit: 'px' }),
+      S('textAlign', 'Выравнивание текста внутри блока', 'left', [['left', 'Слева'], ['center', 'По центру'], ['right', 'Справа']]),
+      N('outT', 'Отступ от края виджета: сверху', 0, 0, 400, { unit: 'px' }),
+      N('outR', 'Отступ от края виджета: справа', 0, 0, 400, { unit: 'px' }),
+      N('outB', 'Отступ от края виджета: снизу', 0, 0, 400, { unit: 'px' }),
+      N('outL', 'Отступ от края виджета: слева', 0, 0, 400, { unit: 'px' })
+    ])
+  ]).concat(boxA).concat([
+    SEC('a', 'text', 'Текст: интервалы, тень, обводка', [
+      N('lh', 'Высота строки', 1.3, 0.8, 2.5, { step: 0.05 }),
+      N('ls', 'Расстояние между буквами', 0, -3, 12, { unit: 'px', step: 0.1 }),
+      N('ws', 'Расстояние между словами', 0, -5, 30, { unit: 'px', step: 0.5 }),
+      S('tcase', 'Регистр', 'normal', CASES),
+      B('italic', 'Курсив', false),
+      B('tShOn', 'Тень текста', false),
+      N('tShX', 'Тень: сдвиг по горизонтали', 0, -20, 20, { unit: 'px', when: function (v) { return v.tShOn; } }),
+      N('tShY', 'Тень: сдвиг по вертикали', 1, -20, 20, { unit: 'px', when: function (v) { return v.tShOn; } }),
+      N('tShBlur', 'Тень: размытие', 3, 0, 40, { unit: 'px', when: function (v) { return v.tShOn; } }),
+      C('tShColor', 'Тень: цвет', '#000000', { when: function (v) { return v.tShOn; } }),
+      N('tShOp', 'Тень: непрозрачность', 70, 0, 100, { unit: '%', when: function (v) { return v.tShOn; } }),
+      N('otW', 'Обводка текста: толщина', 0, 0, 10, { unit: 'px', step: 0.5 }),
+      C('otColor', 'Обводка текста: цвет', '#000000', { when: function (v) { return v.otW > 0; } })
+    ]),
+    SEC('a', 'name', 'Ник: толщина, интервалы', [
+      S('nameWeight', 'Толщина', '700', WEIGHTS),
+      N('nameLs', 'Расстояние между буквами', 0, -2, 12, { unit: 'px', step: 0.1 }),
+      S('nameSep', 'Разделитель после ника', 'none', [['none', 'Нет'], ['colon', ':'], ['dash', '—'], ['arrow', '›']], { when: isInline })
+    ]),
+    SEC('a', 'anim2', 'Анимация подробно', [
+      S('aease', 'Характер движения', 'out', [['out', 'Плавное замедление'], ['linear', 'Равномерно'], ['inout', 'Разгон и торможение'], ['spring', 'С отскоком']]),
+      N('adist', 'Расстояние сдвига', 16, 0, 300, { unit: 'px' }),
+      N('aout', 'Исчезновение', 300, 0, 3000, { unit: 'мс', step: 10 })
+    ]),
+    SEC('a', 'flt2', 'Фильтры подробно', [
+      T('botNames', 'Имена ботов (через запятую)', 'nightbot, streamelements, streamlabs, moobot, fossabot, wizebot', { max: 600, multi: true }),
+      T('blockNames', 'Скрывать этих людей (через запятую)', '', { max: 600, multi: true })
+    ])
+  ]) };
+
+  // Эти настройки НЕ сбрасываются при выборе готового стиля (это поведение, а не оформление).
+  var KEEP = ['scale', 'max', 'life', 'bots', 'hideCmd', 'showSys', 'src', 'botNames', 'blockNames'];
+
+  // ——— Готовые стили (по присланным образцам) ————————————————————————————
+  var PRESETS = [
+    { id: 'bubbles', name: 'Тёмные пузыри', values: {
+      layout: 'bubbles', fs: 20, fw: '600', nameColorMode: 'fixed', nameColor: '#ffffff', nameSize: 15, nameWeight: '800', nameCase: 'upper', nameLs: 0.4,
+      bxFill: '#000000', bxFillOp: 90, bxR: 20, bxPt: 9, bxPr: 16, bxPb: 11, bxPl: 16, gap: 12, align: 'left', nameLine: 'stack',
+      bdSize: 15, bdRadius: 4, showMedia: false, lh: 1.25, mSide: 'auto', mAlign: 'center', bdPos: 'auto' } },
+    { id: 'glass', name: 'Стеклянная капсула', values: {
+      layout: 'bubbles', fs: 15, fw: '500', textColor: '#c9c9d6', nameColorMode: 'fixed', nameColor: '#ffffff', nameSize: 18, nameWeight: '700',
+      bxFill: '#12121c', bxFillOp: 58, bxR: 36, bxBw: 1, bxBc: '#ffffff', bxBop: 30, bxPt: 10, bxPr: 26, bxPb: 10, bxPl: 10,
+      bxShOn: true, bxShY: 8, bxShBlur: 26, bxShOp: 40, bxInOn: true, bxInOp: 14, bxInY: 1, gap: 10,
+      showMedia: true, mSize: 46, mShape: 'circle', mBg: '#05050a', mBgOp: 85, mBw: 1, mBop: 16, mGap: 14, mIcPlat: false, showBadges: false, lh: 1.25, mSide: 'auto', mAlign: 'center', bdPos: 'auto' } },
+    { id: 'music', name: 'Градиентная капсула', values: {
+      layout: 'bubbles', fs: 12, fw: '600', tcase: 'upper', ls: 0.6, textColor: '#b4c2f0', nameColorMode: 'fixed', nameColor: '#ffffff', nameSize: 17, nameWeight: '800', nameCase: 'upper', nameLs: 0.5,
+      bxFillType: 'gradient', bxFill: '#0a1a4a', bxFill2: '#2563eb', bxAngle: 270, bxFillOp: 100, bxR: 40, bxPt: 10, bxPr: 26, bxPb: 10, bxPl: 10,
+      bxShOn: true, bxShY: 6, bxShBlur: 22, bxShColor: '#1d4ed8', bxShOp: 35, gap: 10,
+      showMedia: true, mSize: 46, mShape: 'circle', mBg: '#000000', mBgOp: 100, mIcPlat: true, mGap: 20, showBadges: false, lh: 1.2, mSide: 'auto', mAlign: 'center', bdPos: 'auto' } },
+    { id: 'card', name: 'Карточка', values: {
+      layout: 'bubbles', fs: 19, fw: '800', nameColorMode: 'fixed', nameColor: '#d9cff0', nameSize: 12, nameWeight: '600', nameCase: 'upper', nameLs: 1.3,
+      bxFill: '#7352a8', bxFillOp: 80, bxR: 24, bxPt: 16, bxPr: 28, bxPb: 16, bxPl: 16, gap: 12,
+      bxInOn: true, bxInOp: 10, showMedia: true, mSize: 54, mShape: 'circle', mBg: '#ffffff', mBgOp: 14, mGap: 16, mIcPlat: false, showBadges: false, lh: 1.25, mSide: 'auto', mAlign: 'center', bdPos: 'auto' } },
+    { id: 'classic', name: 'Классика без фона', values: {
+      layout: 'plain', fs: 20, fw: '600', nameLine: 'inline', nameSep: 'colon', nameSize: 20, nameWeight: '800', nameColorMode: 'author',
+      tShOn: true, tShY: 1, tShBlur: 3, tShOp: 90, gap: 5, showMedia: false, bxPt: 0, bxPr: 0, bxPb: 0, bxPl: 0, bdSize: 17, lh: 1.25, mSide: 'auto', mAlign: 'center', bdPos: 'auto' } }
+  ];
+
+  // ——— Расчёт стиля (чистая функция) ———————————————————————————————————————
+  var PLATFORMS = { twitch: { name: 'Twitch', color: '#9146ff' }, youtube: { name: 'YouTube', color: '#ff4e45' } };
+  var CASE = { normal: 'none', upper: 'uppercase', lower: 'lowercase' };
+  var ALIGN = { left: 'flex-start', center: 'center', right: 'flex-end' };
+  var VALIGN = { start: 'flex-start', center: 'center', end: 'flex-end' };
+  var ANCHOR = { top: 'flex-start', center: 'center', bottom: 'flex-end' };
+  var EASE = { out: 'cubic-bezier(.16,1,.3,1)', linear: 'linear', inout: 'ease-in-out', spring: 'cubic-bezier(.34,1.56,.64,1)' };
+  var ANIM = { up: 'sachat-up', down: 'sachat-down', left: 'sachat-left', right: 'sachat-right', scale: 'sachat-scale', fade: 'sachat-fade', none: 'none' };
+  var SEPS = { none: '', colon: ':', dash: '—', arrow: '›' };
+
+  function compile(raw, opts) {
+    var v = SAW.clean(SCHEMA, raw);
+    var app = !!(opts && opts.mode === 'app');
+    var k = v.scale / 100;
+    function px(n) { return (Math.round(n * k * 100) / 100) + 'px'; }
+    var rgba = SAW.rgba;
+    var vars = {}, name;
+
+    // Сторона значка площадки: «авто» — справа, только если блоки прижаты вправо. В авто-режиме оформление зеркалится
+    // вместе со значком (за основу взят значок слева), чтобы справа получалось то же самое, а не «кривое».
+    var side = v.mSide === 'auto' ? (v.align === 'right' ? 'right' : 'left') : v.mSide;
+    v.mSideR = side;
+    // Значки ролей (модератор, VIP…): «авто» — справа от ника, только если блоки прижаты вправо.
+    v.bdPosR = v.bdPos === 'auto' ? (v.align === 'right' ? 'after' : 'before') : v.bdPos;
+    var flip = v.mSide === 'auto' && side === 'right' && v.showMedia && v.layout === 'bubbles';
+
+    var fam = v.ff === 'custom' && SAW.fontName(v.ffCustom) ? '"' + SAW.fontName(v.ffCustom) + '",' + STACKS.sys : (STACKS[v.ff] || STACKS.sys);
+    vars['--fs'] = px(v.fs); vars['--tc'] = v.textColor; vars['--ac'] = v.ac; vars['--ff'] = fam;
+    vars['--fw'] = v.fw; vars['--lh'] = String(v.lh); vars['--ls'] = px(v.ls); vars['--ws'] = px(v.ws);
+    vars['--fst'] = v.italic ? 'italic' : 'normal'; vars['--tt'] = CASE[v.tcase]; vars['--ta'] = v.textAlign;
+    vars['--tsh'] = v.tShOn ? px(v.tShX) + ' ' + px(v.tShY) + ' ' + px(v.tShBlur) + ' ' + rgba(v.tShColor, v.tShOp) : 'none';
+    vars['--tsw'] = px(v.otW); vars['--tsc'] = v.otColor;
+
+    vars['--anchor'] = ANCHOR[v.anchor]; vars['--align'] = ALIGN[v.align];
+    vars['--gap'] = px(v.gap);
+    vars['--maxw'] = v.maxW > 0 ? px(v.maxW) : '100%'; vars['--minw'] = px(v.minW);
+    vars['--pw'] = v.maxW > 0 ? px(v.maxW) : '100%';
+    vars['--out'] = px(v.outT) + ' ' + px(v.outR) + ' ' + px(v.outB) + ' ' + px(v.outL);
+    vars['--hgap'] = px(6);
+
+    // подложка
+    var bg = 'transparent';
+    if (v.bxFillType === 'solid') bg = rgba(v.bxFill, v.bxFillOp);
+    else if (v.bxFillType === 'gradient') bg = 'linear-gradient(' + (flip ? (360 - v.bxAngle) % 360 : v.bxAngle) + 'deg,' + rgba(v.bxFill, v.bxFillOp) + ',' + rgba(v.bxFill2, v.bxFillOp) + ')';
+    vars['--bg'] = bg;
+    vars['--bd'] = v.bxBw > 0 ? px(v.bxBw) + ' ' + v.bxBs + ' ' + rgba(v.bxBc, v.bxBop) : 'none';
+    vars['--rad'] = v.bxREach ? (flip ? px(v.bxRtr) + ' ' + px(v.bxRtl) + ' ' + px(v.bxRbl) + ' ' + px(v.bxRbr) : px(v.bxRtl) + ' ' + px(v.bxRtr) + ' ' + px(v.bxRbr) + ' ' + px(v.bxRbl)) : px(v.bxR);
+    var sh = [];
+    if (v.bxShOn) sh.push(px(flip ? -v.bxShX : v.bxShX) + ' ' + px(v.bxShY) + ' ' + px(v.bxShBlur) + ' ' + px(v.bxShSpread) + ' ' + rgba(v.bxShColor, v.bxShOp));
+    if (v.bxInOn) sh.push('inset 0 ' + px(v.bxInY) + ' ' + px(v.bxInBlur) + ' ' + px(v.bxInSpread) + ' ' + rgba(v.bxInColor, v.bxInOp));
+    vars['--shadow'] = sh.length ? sh.join(',') : 'none';
+    vars['--pad'] = flip ? px(v.bxPt) + ' ' + px(v.bxPl) + ' ' + px(v.bxPb) + ' ' + px(v.bxPr) : px(v.bxPt) + ' ' + px(v.bxPr) + ' ' + px(v.bxPb) + ' ' + px(v.bxPl);
+    vars['--blur'] = app && v.bxBlur > 0 ? 'blur(' + px(v.bxBlur) + ')' : 'none';
+
+    // ник, значки, время
+    vars['--nfs'] = px(v.nameSize); vars['--nfw'] = v.nameWeight; vars['--ntt'] = CASE[v.nameCase]; vars['--nls'] = px(v.nameLs);
+    vars['--bs'] = px(v.bdSize); vars['--br'] = px(v.bdRadius);
+    vars['--tmc'] = v.tmColor; vars['--tmfs'] = px(v.tmSize);
+
+    // аватар / значок площадки
+    vars['--ms'] = px(v.mSize); vars['--mgap'] = px(v.mGap); vars['--mal'] = VALIGN[v.mAlign];
+    vars['--mr'] = v.mShape === 'circle' ? '50%' : v.mShape === 'rounded' ? px(v.mRadius) : '0';
+    vars['--mbg'] = rgba(v.mBg, v.mBgOp);
+    vars['--mbd'] = v.mBw > 0 ? px(v.mBw) + ' solid ' + rgba(v.mBc, v.mBop) : 'none';
+    vars['--mic'] = v.mIc;
+
+    // платные и системные
+    vars['--pdbg'] = rgba(v.paidFill, v.paidOp); vars['--pdtc'] = v.paidText;
+    vars['--sysc'] = v.sysColor; vars['--sysfs'] = px(v.sysSize); vars['--sysfst'] = v.sysItalic ? 'italic' : 'normal';
+
+    // анимация
+    vars['--aname'] = ANIM[v.an]; vars['--adur'] = v.adur + 'ms'; vars['--aease'] = EASE[v.aease];
+    vars['--adist'] = px(v.adist); vars['--aout'] = v.aout + 'ms';
+
+    var classes = ['is-' + v.layout, 'name-' + v.nameLine, 'dir-' + v.dir];
+    if (v.paidOn) classes.push('paid-on');
+    return { values: v, vars: vars, classes: classes };
+  }
+
+  // ——— Фильтр сообщений (чистая функция) ——————————————————————————————————
+  function nameList(s) {
+    return String(s || '').split(/[,;\n]+/).map(function (x) { return x.trim().toLowerCase(); }).filter(Boolean);
+  }
+  function plainText(m) { return (m.parts || []).map(function (p) { return p.text; }).join(''); }
+  function accept(m, v) {
+    if (!m || !Array.isArray(m.parts)) return false;
+    if (m.kind === 'system') return !!v.showSys && (v.src === 'all' || v.src === m.platform);
+    if (v.src !== 'all' && v.src !== m.platform) return false;
+    var a = String(m.author || '').toLowerCase();
+    if (v.bots && nameList(v.botNames).indexOf(a) >= 0) return false;
+    if (nameList(v.blockNames).indexOf(a) >= 0) return false;
+    if (v.hideCmd && m.kind !== 'superchat' && m.kind !== 'member' && /^\s*!/.test(plainText(m))) return false;
+    return true;
+  }
+
+  // ——— Стили страницы ———————————————————————————————————————————————————————
+  var CSS = [
+    '.sachat{position:relative;width:100%;height:100%;box-sizing:border-box;overflow:visible;display:flex;flex-direction:column;justify-content:var(--anchor);padding:var(--out);color:var(--tc);font-family:var(--ff);font-size:var(--fs);font-weight:var(--fw);font-style:var(--fst);line-height:var(--lh);letter-spacing:var(--ls);word-spacing:var(--ws);text-align:var(--ta);text-shadow:var(--tsh);-webkit-text-stroke:var(--tsw) var(--tsc);paint-order:stroke fill}',
+    '.sachat *{box-sizing:border-box}',
+    '.sachat-list{display:flex;flex-direction:column;gap:var(--gap);min-height:0;max-height:100%;overflow:visible;align-items:var(--align);width:100%}',
+    '.sachat.dir-bottom .sachat-list{justify-content:flex-end}.sachat.dir-top .sachat-list{justify-content:flex-start}',
+    '.sachat-msg{display:flex;align-items:var(--mal);gap:var(--mgap);flex:0 0 auto;width:fit-content;max-width:var(--maxw);min-width:var(--minw)}',
+    '.sachat.is-bubbles .sachat-msg.k-chat,.sachat.is-bubbles .sachat-msg.k-paid{background:var(--bg);border:var(--bd);border-radius:var(--rad);box-shadow:var(--shadow);padding:var(--pad);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur)}',
+    '.sachat.is-panel .sachat-list{align-self:var(--align);width:var(--pw);background:var(--bg);border:var(--bd);border-radius:var(--rad);box-shadow:var(--shadow);padding:var(--pad);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur)}',
+    '.sachat.is-panel .sachat-msg{width:100%;max-width:none;min-width:0}',
+    '.sachat.is-plain .sachat-msg{padding:0}',
+    '.sachat.paid-on .sachat-msg.k-paid{background:var(--pdbg);color:var(--pdtc);border-radius:var(--rad);padding:var(--pad)}',
+    '.sachat.is-panel.paid-on .sachat-msg.k-paid,.sachat.is-plain.paid-on .sachat-msg.k-paid{border-radius:calc(var(--rad))}',
+    '.sachat-body{min-width:0;flex:1 1 auto;overflow-wrap:anywhere}',
+    '.sachat-head{display:flex;flex-wrap:wrap;align-items:center}',
+    '.sachat-head>*{margin-right:var(--hgap)}.sachat-head>*:last-child{margin-right:0}',
+    '.sachat.name-inline .sachat-head,.sachat.name-inline .sachat-text{display:inline}',
+    '.sachat.name-inline .sachat-head>*{display:inline-flex;vertical-align:middle}',
+    '.sachat.name-inline .sachat-head>.sachat-name{display:inline;vertical-align:baseline}',
+    '.sachat-name{font-size:var(--nfs);font-weight:var(--nfw);text-transform:var(--ntt);letter-spacing:var(--nls);line-height:1.2}',
+    '.sachat-text{text-transform:var(--tt)}',
+    '.sachat-emote{height:1.5em;width:auto;vertical-align:middle}',
+    '.sachat-time{white-space:nowrap;flex:0 0 auto;color:var(--tmc);font-size:var(--tmfs);font-weight:500;text-shadow:none}',
+    '.sachat-amt{white-space:nowrap;flex:0 0 auto;font-weight:800;padding:0 .4em;border-radius:.4em;background:rgba(0,0,0,.22)}',
+    '.sachat-bd{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;color:#fff;text-shadow:none;-webkit-text-stroke:0}',
+    '.sachat-bd.image{width:var(--bs);height:var(--bs);border-radius:var(--br);display:block;object-fit:cover}',
+    '.sachat-bd.icon{width:var(--bs);height:var(--bs);border-radius:var(--br)}',
+    '.sachat-bd.icon svg{width:68%;height:68%;fill:currentColor}',
+    '.sachat-bd.pill{height:calc(var(--bs)*1.1);padding:0 .55em;border-radius:var(--br);font-size:calc(var(--bs)*.68);font-weight:700;line-height:1;text-transform:none;letter-spacing:0}',
+    '.sachat-bd.dot{width:calc(var(--bs)*.62);height:calc(var(--bs)*.62);border-radius:50%}',
+    '.sachat-media{flex:0 0 auto;width:var(--ms);height:var(--ms);border-radius:var(--mr);background:var(--mbg);border:var(--mbd);display:grid;place-items:center;overflow:hidden;color:var(--mic);text-shadow:none;-webkit-text-stroke:0}',
+    '.sachat-media svg{width:56%;height:56%;fill:currentColor}',
+    '.sachat-media .ltr{font-weight:800;font-size:calc(var(--ms)*.46);line-height:1;text-transform:uppercase}',
+    '.sachat-msg.k-sys{display:block;width:100%;max-width:var(--maxw);padding:2px 4px;color:var(--sysc);font-size:var(--sysfs);font-style:var(--sysfst);background:none;border:0;box-shadow:none}',
+    '.sachat-msg.is-new{animation:var(--aname) var(--adur) var(--aease) both}',
+    '.sachat-msg.is-out{opacity:0;transition:opacity var(--aout) linear}',
+    '@keyframes sachat-up{from{opacity:0;transform:translateY(var(--adist))}to{opacity:1;transform:none}}',
+    '@keyframes sachat-down{from{opacity:0;transform:translateY(calc(var(--adist)*-1))}to{opacity:1;transform:none}}',
+    '@keyframes sachat-left{from{opacity:0;transform:translateX(calc(var(--adist)*-1))}to{opacity:1;transform:none}}',
+    '@keyframes sachat-right{from{opacity:0;transform:translateX(var(--adist))}to{opacity:1;transform:none}}',
+    '@keyframes sachat-scale{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:none}}',
+    '@keyframes sachat-fade{from{opacity:0}to{opacity:1}}'
+  ].join('\n');
+  function ensureCss(doc) {
+    if (doc.getElementById('sachat-css')) return;
+    var st = doc.createElement('style');
+    st.id = 'sachat-css'; st.textContent = CSS;
+    (doc.head || doc.documentElement).appendChild(st);
+  }
+
+  // ——— Отрисовка одного сообщения ——————————————————————————————————————————
+  // Основные значки ролей — готовые картинки 72×72, встроены в код (data:), поэтому работают офлайн и в OBS.
+  var BADGE_IMG = {
+    broadcaster: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAACvklEQVR42u3c30rbUBwH8O85LnFddhFBRnsR0CfQC0Eab9a9gH/q5lsMmXqtvdYO9xgdG84nmBdrymCwvIGFCO1AaRirlYbmtwtR1OnaxDbG9Pe9KqSlJ5/+cn4n9LQCN1JLj78UQiwIiHkAExiO2EKQ3fG9QqbuVq8eEBcPDnVd11LKJkGsYogjQbt/Wl5h0nXdS6BDXdefpdSvAKbBAQD7tNXOTbquKwFASymbjHMt08/PTSBqaX1CCvWQTf6NT35OSqFsMcXtEUIsSAhMMcUdQBDz4lfmBTHF/7oah4EYiIEYiIEYiIGGM0+CPFkxTTx9vQLVnMOIYUQ60I7joG1ZaL7fhu840a2me11Ja2vr0NY2YvGpNos7aBa343OJxQkn6vF0rSBpGBj//iOW80MjvwivYj1sBcWpcm4m9WYl9GsV04T+ae/+k7SaNWMLpJhzoWC0dxtQzd7OqytQ1N0qSIKMLShMqDb/GBMWJvFA94VJLFC/YBIH1G+YxAANCiYxQGM9rGX4bp6BGIiBGIiBGIjDQAzEQAzEQAzEQAzESQ7Q79W36Azwu/pHD3T2sYST2ZmBQSXmEruAauQX0a6UGeiueBULbn6pb1CJnaT7BZX4LnZfqK5AnSMnticfZFK+BmV9A4j6A+RZ5RhXRzlcRS3n0VheOofqkq4bqJSsibHPe7EEOpmdGegaqLcKqliR7QcMkmZxZ+A4PU/SUW6ajNt4Av1ebMQwoK2tQ8k+wDbgIwdtq4yzUmng+xJDA/HNKoeBGIiBGIiBGIiBhguoygx3rKIBWxJonyluj0+wJRF9YYrbQ5AFmakfHxDoA3PcxKHdTL1elQAwOuptQZDNLJf52Wp5hcsuNlZ1XVX1clxJIALtnrbar679ydvV1NLpCcDfkoKmADH94JUezbtUO4L2BdF+pn58cPXQXxL2D3UMil8FAAAAAElFTkSuQmCC',
+    lead_moderator: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAE4ElEQVR42u3cv08bZxgH8O+9NpJlpHKpUkVi6L2R6ECH2BWRmkgNYFGpLIAtFHXDpuwkaedimz8gId0JmB0ZR6raIch2MjRDkewuLEjcZaBDLXGOGquSf1wG18EQDPfjfe+Mfc+EbHx3/uh53vd93jtZwNlIeyfRwBzQCAMCRT+EphUgCAWQgSQi/8ntbwknMKIIvI2jITxEX4ewBlJLIgL1BCgtiqj/m4WgBeFGM6M8jRAiUEnzlbdxF6c9iYQgGt54M4PSPopG9dBVOSeIECJoVOOuRIeoI0ygCW5pdSw1bY64Y8+FQYmtZ/NTHE4f4HD6ANR/NZZYxE6c7PgLUD899bcLdAbnotf6EugiiKuARJzCuSpIxEmcs/8rDoj9AWQmK6if4smtx70PJA6ISN/ZNlUy4eHZrssiwhone28XQTFg+vPBoUBvAlnF+VBqg7T3gFjhNMciqfeANsbWmeAAgGQwg3gvD4h1nGcID88xu6DgJwFdGbsx9gzHMyUcTh/geKaEJ7cecxngBWx7NCs4MWmB+UWFXk4hV8obXkLk/skj9GqqOzKIFw4AbNxeN9WaTH42gZgUZXotHnxPEkYH5N+++ZVpWZ13jocjy6B+ipuDEnzEB+qnSN+9fH2l1srIHGWYXYvX6AfSd7cxeX3ClhmkmaHGsvSad8jZEhO93dcvtcfO38+dBYq8nodckbsSR67I2GFYXqaA5IqM0MtvoVbVrsPhcV3E/MVMdQ1SC4dHZpue5gvlYlcg8cSxvJLuBqTFP5e4jomWW40WklMDN+/u38viIIVyETd/H8Hk9QkExQCon0IalED9lPv+Du/jW+rF9HbbMWkB8dEVLsdXqyq+2r3NLYMNtxpmvkCulEe5qmL6xnfMj+/z+BAenkVRLUKuKFcvg9rjeKbEdc9ZrsgolIuQ3ylQKjIKahGFctHSJOKFjZE5eo4opx2AVjmf18xuKlt49NePpqBsfXjBqZkuJi0ge2/XVPbaCuTkeikoBkwh2QYUHApwm8l4IhG7cLLju11xU7CFpHezn/QTzikknbfGSb/htM942fEXzgFFpWjX4rQipWw5sw6KSlFsjq3r7+XUIlJvUqB+irnhWVueFUruryKxv2r/StoMTujV6S2TxOgK1xlPLw7zXowFDgDkSnlcGxBx59OvHcVhmkFGcXaOMljcW+q4eBQHRBzPlBzFYTZIG8VJKVuIvJ6/cGWtVlWmrYkZHCZAZnBiez/o7N0UR3EsA/HEAQDlneIojiUg3jgsun+rOKaBHowsc8cBmo+zOIljCig+uoI1A4/rmsUBmjcDzGQRKxzDQPHRFSQMLOCs4LRmssgf84b2kVjiGAKyG6c9i/TenGSNoxvIKRwjSDxwdAHFPo8awknurzLF0YPEC0cX0IMvlh2r//OQHhV/svWcl2536L21y/tCW7H5JtUs+y9/RkrZ4n7OS5tVPTf77MJxIi4tsct23XoZRxfQ2sEvHRdrvY6jC6j1BFdK2fowg+RKeSzuLfU8jq4xqN+DAJBdhg6hCQUCQci4Ep3qSysQ1LHjSnSqr3qS4H4tB0146mp8VF5PEYHcnMU8tQQEreCqnIw98NQSJ9N8BCqERsjNpP8zx1MLnf6Rt/ZIg6LuSYAIAWh989tCMjQhAw07uF/Ltb/xHmh6a7Ia1CUAAAAAAElFTkSuQmCC',
+    moderator: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAADsElEQVR42u2cv07bUBTGv3sTllYqXrqwNEOWLBDK1KGUlAcIUYU60wcIlAdI7ExVBxTYqz5ARVNGhiiUqUMrAktEhdSwFamDaSukisS3QwSYKH/859r3WPhMUezE9/58vu+cey2ZoT8+YAEsuQRm5QGWwl0IIZpgrAneNVBA236IXX+qQQN4GRZbw50OVsXvjoEVmDeAatDQTTbARBZx9DLqj5XDCkze+4aXYzj2JGJZPEiWexlUQwpW4kdMZUBYLMfRTegxiWGZZC1xgM3EJIZKLc9j7xkZqWSURruaLqI6vSE3ST6ORsAjcyvvPYKeKYV+3UgA0iY0NJ7WoU1oMaBBUc6UkLqvZtVDHtBquoi1dFHZ9UkDUuU7kQCk0nciAUil75AHpNp3SAOi4DtkAVHxHbKAqPgOSUCUfIccIGq+QwoQRd8hBYii75ABRNV3SACi7DvKAVH3HeWAqPuOUkBUfMe8NPH6aH3seQzbCRGm7xwsflMurfbFKXL7z9G+OKWTQVR8Z/NkC7P1OUdwACC0xz6qfce8NGG0KqiebLn6XSiAVPuOG0lJk9hquojs5Pin1qr7HbeSkgKonCmhOr2Bxnx9JCSVvnNVpdaO1mFemuGV+XKmdJ0R2oQ2EpIq32lfnGK2Pufab3wDssO5lSUDIKnyHb+S8twHDYLTn9K5/UU0zw+V9Dteq5QUQOPg2AdZ+PIC7x+/C1VafqqUFEDZyRk05mkuLjdPtqC3Kr6M2LcHNc8PkdtfDGwQKquU1LUYlUwKUlK+qhiFTJJdpaT3QaoghSUpadsdYcotTElJW4uFlUlhS0rqflCQkFRJSprEgpSbSklJzaCryE/lpcFRLan+8L1h5nQZomotpRSQLDiUJCVNYrLgAMDK11ck4XgGJBMOANSebDvavo0EINlwgPE7k5EB5BaO0apgtj7nqI+hCokHCUdvVVw1kxQh8SDheOm4qUHiQcPxCmlpKh8NQMzFnw2D4xbSuP8hBUhvVWA4GKzTSY2DRAmOYw8aB8ntpIZBogbHVRUbBsnrpPohUYQDAAm85LrTk/d+fQYDsPDwmZRJ/fx3ht2zXRz/Pcab729JdtKe9oOuqhrFO04C0F0KDtx+oVActhCiySHETkximL5Yk0PwTzGJYfrqGhzLnT0IthnT6JcXq6KAdq8PSnR0MNGMqVx7zwESHeOmUSzABLNycSZBQLAqEtZzFOwvebNHDaneW6nEDBjLKhtouJdrQ/AdCOxgubNnP/If0eYiZ8z2rLsAAAAASUVORK5CYII='
+  };
+  var NS = 'http://www.w3.org/2000/svg';
+  var ICONS = {
+    twitch: 'M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714z',
+    youtube: 'M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z',
+    broadcaster: 'M12 5a7 7 0 100 14 7 7 0 000-14z',
+    moderator: 'M12 2l8 3v6c0 5-3.4 9-8 11-4.6-2-8-6-8-11V5z',
+    lead_moderator: 'M12 2l8 3v6c0 5-3.4 9-8 11-4.6-2-8-6-8-11V5z',
+    vip: 'M12 2.5l8.5 8.5L12 21.5 3.5 11z',
+    subscriber: 'M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4 6.1 20.5l1.2-6.5L2.5 9.4l6.6-.9z',
+    partner: 'M9.2 16.6L4.9 12.3l-1.6 1.6 5.9 5.9L21.2 7.8l-1.6-1.6z',
+    staff: 'M12 2l8.7 5v10L12 22l-8.7-5V7z'
+  };
+  function svg(d) {
+    var s = document.createElementNS(NS, 'svg');
+    s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('aria-hidden', 'true');
+    var p = document.createElementNS(NS, 'path'); p.setAttribute('d', d);
+    s.appendChild(p); return s;
+  }
+  function hexOk(c) { return typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c) ? c.toLowerCase() : null; }
+  function isLight(hex) {
+    var r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+    return (0.299 * r + 0.587 * g + 0.114 * b) > 170;
+  }
+  function el(tag, cls) { var e = document.createElement(tag); if (cls) e.className = cls; return e; }
+  function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+  function timeText(ts, fmt) {
+    var d = new Date(ts); if (isNaN(d.getTime())) return '';
+    var h = d.getHours(), m = pad2(d.getMinutes());
+    if (fmt === '12') return (h % 12 || 12) + ':' + m + ' ' + (h < 12 ? 'AM' : 'PM');
+    return pad2(h) + ':' + m;
+  }
+  var ROLE_KEY = { broadcaster: 'bcBroadcaster', moderator: 'bcModerator', lead_moderator: 'bcModerator', vip: 'bcVip', subscriber: 'bcSub', partner: 'bcPartner', staff: 'bcStaff' };
+
+  function emote(part) {
+    var url = part.image;
+    if (typeof url !== 'string' || url.indexOf('https://') !== 0) return document.createTextNode(part.text);
+    var img = el('img', 'sachat-emote');
+    img.src = url; img.alt = part.text; img.title = part.text; img.loading = 'lazy';
+    img.addEventListener('error', function () { img.replaceWith(document.createTextNode(part.text)); });
+    return img;
+  }
+  function nameColor(m, v) {
+    switch (v.nameColorMode) {
+      case 'platform': return (PLATFORMS[m.platform] || {}).color || v.ac;
+      case 'accent': return v.ac;
+      case 'fixed': return v.nameColor;
+      default: return hexOk(m.color) || v.ac;
+    }
+  }
+  function renderMsg(m, v) {
+    var d = el('div', 'sachat-msg');
+    d.setAttribute('data-seq', String(m.seq));
+    if (m.kind === 'system') {
+      d.className += ' k-sys';
+      d.textContent = ((PLATFORMS[m.platform] || {}).name ? PLATFORMS[m.platform].name + ': ' : '') + plainText(m);
+      return d;
+    }
+    var paid = (m.kind === 'superchat' || m.kind === 'member') && v.paidOn;
+    d.className += paid ? ' k-paid' : ' k-chat';
+
+    var media = null;
+    if (v.showMedia) {
+      media = el('div', 'sachat-media');
+      var plat = PLATFORMS[m.platform] || { color: v.ac };
+      if (v.mUsePlat) media.style.background = SAW.rgba(plat.color, v.mBgOp);
+      if (v.mKind === 'letter') {
+        var l = el('span', 'ltr');
+        l.textContent = Array.from(String(m.author || '?'))[0] || '?';
+        l.style.color = v.mIcPlat ? plat.color : (hexOk(m.color) || v.mIc);
+        media.appendChild(l);
+      } else {
+        if (ICONS[m.platform]) media.appendChild(svg(ICONS[m.platform]));
+        media.style.color = v.mIcPlat ? plat.color : v.mIc;
+      }
+      media.title = (PLATFORMS[m.platform] || {}).name || '';
+    }
+
+    var body = el('div', 'sachat-body'), head = el('div', 'sachat-head');
+    if (v.showTime) { var t = el('span', 'sachat-time'); t.textContent = timeText(m.ts, v.tmFmt); head.appendChild(t); }
+    function addBadges() {
+      if (!v.showBadges) return;
+      var roles = (m.badges || []).map(function (b) { return b.role; });
+      (m.badges || []).forEach(function (b) {
+        if (b.role === 'moderator' && roles.indexOf('lead_moderator') >= 0) return;   // ведущий модератор — уже модератор
+        var role = ROLE_KEY[b.role] ? b.role : 'dot', c = v[ROLE_KEY[b.role]] || v.ac;
+        var s, img = v.bdStyle === 'image' ? BADGE_IMG[b.role] : null;
+        if (img) {                                  // готовая картинка роли
+          s = el('img', 'sachat-bd image'); s.src = img; s.alt = b.label || ''; s.title = b.label || '';
+          head.appendChild(s); return;
+        }
+        s = el('span', 'sachat-bd ' + (v.bdStyle === 'image' ? 'icon' : v.bdStyle));   // у роли нет картинки — цветной значок
+        s.style.background = c; s.title = b.label || '';
+        if (v.bdStyle === 'icon' || v.bdStyle === 'image') { s.style.color = isLight(c) ? '#111' : '#fff'; s.appendChild(svg(ICONS[role] || ICONS.broadcaster)); }
+        else if (v.bdStyle === 'pill') { s.style.color = isLight(c) ? '#111' : '#fff'; s.textContent = b.label || ''; }
+        head.appendChild(s);
+      });
+    }
+    if (v.bdPosR === 'before') addBadges();
+    var who = el('b', 'sachat-name');
+    who.textContent = String(m.author || '') + (v.nameLine === 'inline' && SEPS[v.nameSep] ? SEPS[v.nameSep] : '');
+    if (!paid) who.style.color = nameColor(m, v);
+    head.appendChild(who);
+    if (v.bdPosR === 'after') addBadges();
+    if (m.amount) { var a = el('span', 'sachat-amt'); a.textContent = String(m.amount); head.appendChild(a); }
+    body.appendChild(head);
+    if (v.nameLine === 'inline') body.appendChild(document.createTextNode(' '));
+
+    var tx = el('div', 'sachat-text');
+    (m.parts || []).forEach(function (p) {
+      tx.appendChild(p.image && v.showEmotes ? emote(p) : document.createTextNode(p.text));
+    });
+    body.appendChild(tx);
+
+    var mside = v.mSideR || (v.mSide === 'right' ? 'right' : 'left');
+    if (media && mside === 'left') d.appendChild(media);
+    d.appendChild(body);
+    if (media && mside === 'right') d.appendChild(media);
+    return d;
+  }
+
+  // ——— Живой виджет ———————————————————————————————————————————————————————
+  // opts: { mode:'obs'|'app', w, h, k }  — w/h/k нужны только предпросмотру: виджет рисуется
+  // в натуральном размере w×h пикселей оверлея и уменьшается на k, чтобы пиксели совпали с OBS.
+  function create(host, values, opts) {
+    opts = opts || {};
+    ensureCss(host.ownerDocument || document);
+    var rootEl = el('div', 'sachat'), listEl = el('div', 'sachat-list');
+    rootEl.appendChild(listEl); host.appendChild(rootEl);
+    var st = { c: compile(values, opts), list: [], have: {}, timers: {}, dead: false };
+
+    function applyLook() {
+      st.c = compile(st.vals, opts);
+      var vs = st.c.vars;
+      Object.keys(vs).forEach(function (k) { rootEl.style.setProperty(k, vs[k]); });
+      rootEl.className = 'sachat ' + st.c.classes.join(' ');
+    }
+    function size(o) {
+      if (o && o.w && o.h) {
+        rootEl.style.width = o.w + 'px'; rootEl.style.height = o.h + 'px';
+        rootEl.style.transform = 'scale(' + (o.k || 1) + ')'; rootEl.style.transformOrigin = '0 0';
+      }
+    }
+    st.vals = values; applyLook(); size(opts);
+
+    function visible() {
+      var v = st.c.values, out = st.list.filter(function (m) { return accept(m, v); });
+      return out.slice(-v.max);
+    }
+    function clearTimers() { Object.keys(st.timers).forEach(function (k) { clearTimeout(st.timers[k]); }); st.timers = {}; }
+    function drop(seq) {
+      var i = st.list.findIndex(function (m) { return m.seq === seq; });
+      if (i >= 0) st.list.splice(i, 1);
+      delete st.timers[seq];
+      var n = listEl.querySelector('[data-seq="' + seq + '"]');
+      if (!n) return;
+      var out = st.c.values.aout;
+      if (out > 0) { n.classList.add('is-out'); setTimeout(function () { if (n.parentNode) n.remove(); }, out + 30); }
+      else n.remove();
+    }
+    function arm(m) {
+      var life = st.c.values.life;
+      if (life > 0 && !st.timers[m.seq]) st.timers[m.seq] = setTimeout(function () { drop(m.seq); }, life * 1000);
+    }
+    // Сообщения не режутся пополам: что не помещается в блок целиком — убирается (самое старое).
+    // Считаем по offsetHeight (без transform), поэтому анимация появления не влияет на расчёт.
+    function fit() {
+      if (st.dead || !listEl.isConnected) return;
+      var cs = getComputedStyle(listEl), gap = parseFloat(cs.rowGap) || 0,
+          room = listEl.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0),
+          top = st.c.values.dir === 'top', kids = listEl.children, total = 0, i;
+      if (!(room > 0)) return;
+      for (i = 0; i < kids.length; i++) total += kids[i].offsetHeight + (i ? gap : 0);
+      while (total > room + 0.5 && kids.length > 1) {
+        var old = top ? listEl.lastChild : listEl.firstChild;
+        total -= old.offsetHeight + gap; old.remove();
+      }
+    }
+    listEl.addEventListener('load', fit, true);   // картинка (смайл) догрузилась и изменила высоту
+    function paint(fresh) {
+      var v = st.c.values, vis = visible(), nodes;
+      if (v.dir === 'top') vis = vis.slice().reverse();
+      nodes = vis.map(function (m) {
+        var n = renderMsg(m, v);
+        if (fresh && fresh === m.seq) n.classList.add('is-new');
+        return n;
+      });
+      listEl.replaceChildren.apply(listEl, nodes);
+      fit();
+    }
+    var api = {
+      push: function (m) {
+        if (st.dead || !m || st.have[m.seq] || !Array.isArray(m.parts)) return;
+        st.have[m.seq] = true;
+        var i = st.list.length;
+        while (i > 0 && st.list[i - 1].ts > m.ts) i--;
+        st.list.splice(i, 0, m);
+        if (st.list.length > 120) { var gone = st.list.shift(); delete st.have[gone.seq]; }
+        if (!accept(m, st.c.values)) return;
+        var v = st.c.values, tail = i === st.list.length - 1;
+        if (tail) {
+          var n = renderMsg(m, v); n.classList.add('is-new');
+          if (v.dir === 'top') listEl.insertBefore(n, listEl.firstChild); else listEl.appendChild(n);
+          while (listEl.children.length > v.max) {
+            var old = v.dir === 'top' ? listEl.lastChild : listEl.firstChild; old.remove();
+          }
+          fit();
+        } else paint(m.seq);
+        arm(m);
+      },
+      setMessages: function (arr) {
+        clearTimers(); st.list = []; st.have = {};
+        (arr || []).forEach(function (m) {
+          if (!m || st.have[m.seq] || !Array.isArray(m.parts)) return;
+          st.have[m.seq] = true; st.list.push(m);
+        });
+        st.list.sort(function (a, b) { return a.ts - b.ts || a.seq - b.seq; });
+        paint(0);
+        visible().forEach(arm);
+      },
+      update: function (vals, o) { st.vals = vals; if (o) { opts = o; size(o); } applyLook(); paint(0); visible().forEach(arm); },
+      clear: function () { clearTimers(); st.list = []; st.have = {}; listEl.replaceChildren(); },
+      destroy: function () { st.dead = true; clearTimers(); rootEl.remove(); },
+      fit: fit,   // пересчитать, что помещается (если виджет создан до вставки в страницу)
+      root: rootEl
+    };
+    return api;
+  }
+
+  // ——— Образцы сообщений для предпросмотра ————————————————————————————————
+  function demo(now) {
+    now = now || Date.now();
+    function m(seq, platform, author, color, text, extra) {
+      var o = { seq: seq, id: 'demo' + seq, platform: platform, kind: 'chat', author: author, color: color, badges: [], parts: [{ text: text }], ts: now - (12 - seq) * 20000, amount: null };
+      if (extra) Object.keys(extra).forEach(function (k) { o[k] = extra[k]; });
+      return o;
+    }
+    return [
+      m(1, 'twitch', 'mint_fox', '#ff6b9d', 'Привет всем! Как настроение?', { badges: [{ role: 'subscriber', label: 'Подписчик' }] }),
+      m(2, 'twitch', 'Nightbot', '#5aa0ff', 'Добро пожаловать на стрим! Правила — в описании.', { badges: [{ role: 'moderator', label: 'Модератор' }] }),
+      m(3, 'youtube', 'Tysune_42', null, 'Классный трек, подскажите название?', { badges: [{ role: 'partner', label: 'Подтверждён' }] }),
+      m(4, 'twitch', 'from_north', '#7cf0a8', '!song Nightcall', { badges: [{ role: 'lead_moderator', label: 'Ведущий модератор' }, { role: 'moderator', label: 'Модератор' }] }),
+      m(5, 'twitch', 'Фоксяндрия', '#ffb703', 'Спасибо за стрим, очень нравится атмосфера!', { badges: [{ role: 'broadcaster', label: 'Стример' }, { role: 'vip', label: 'VIP' }] }),
+      m(6, 'youtube', 'kit_fox', '#c084fc', 'Когда будет аукцион?', { kind: 'chat', badges: [{ role: 'lead_moderator', label: 'Ведущий модератор' }] }),
+      m(7, 'youtube', 'Заяц Иван', '#ffffff', 'Держи, на новый микрофон!', { kind: 'superchat', amount: '500 ₽', badges: [{ role: 'subscriber', label: 'Спонсор канала' }] }),
+      m(8, 'twitch', 'ModBot', null, 'from_north получил таймаут на 10 минут', { kind: 'system' }),
+      m(9, 'twitch', 'long_nick_example', '#3ea6ff', 'Очень длинное сообщение, чтобы проверить, как блок переносит строки и держит ширину при большом количестве текста.')
+    ];
+  }
+
+  var def = SAW.register({ id: 'chat', kind: 'Чат', name: 'Чат', v: 1, schema: SCHEMA, presets: PRESETS, keep: KEEP });
+  // старые настройки чата (до общего формата): sz — размер текста в %, ac — название цвета
+  def.migrate = function (c) {
+    var out = Object.assign({}, c || {});
+    if (out.sz !== undefined && out.scale === undefined) out.scale = out.sz;
+    delete out.sz;
+    var names = { 'Оранжевый': '#ff7a1a', 'Фиолетовый': '#8b5cf6', 'Белый': '#f5f3f9' };
+    if (names[out.ac]) out.ac = names[out.ac];
+    return out;
+  };
+  SAW.chat = { schema: SCHEMA, presets: PRESETS, keep: KEEP, compile: compile, accept: accept, create: create, demo: demo, css: CSS, renderMsg: renderMsg };
+  if (typeof module !== 'undefined' && module.exports) module.exports = SAW.chat;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>
+/* sachat-hub.js — «клей» между виджетом «Чат» (wchat.js) и FoxFire Hub.
+
+   В программе StreamAssist чат читает Rust (src-tauri/src/chat/twitch.rs, emotes.rs, youtube.rs), а виджет
+   только рисует. В Hub бэкенда StreamAssist нет, поэтому здесь то же самое сделано в браузере:
+     • Twitch — анонимный IRC по WebSocket (justinfan…), разбор строк = порт twitch.rs (те же правила и те же проверки);
+     • 7TV / BetterTTV — глобальные наборы, порт emotes.rs;
+     • YouTube — без ключа через локальный сервер / команду Hub (как в unified-chat) или по API-ключу Google;
+     • всё приводится к ЕДИНОМУ формату ChatMessage, который понимает wchat.js:
+         { seq, id, platform:'twitch'|'youtube', kind:'message'|'superchat'|'member'|'system',
+           author, color, badges:[{role,label}], parts:[{text,image?}], ts, amount }
+   Текст сообщения — не HTML, а список частей «текст / картинка»: wchat.js строит их через textContent.
+
+   Файл ничего не знает о странице: все обращения к сети и окну идут через `env`, поэтому разбор проверяется
+   тестами в Node (tests/sachat-hub.test.js) без браузера. */
+(function (root) {
+  'use strict';
+
+  var TWITCH_WS = 'wss://irc-ws.chat.twitch.tv:443';
+  var SEEN_MAX = 4000;           // сколько последних идентификаторов помним для защиты от повторов
+  var STALE_MS = 7 * 60 * 1000;  // Twitch шлёт PING раз в ~5 минут; тишина дольше 7 — соединение мёртвое
+
+  // ——— Настройки подключения (то, что не относится к оформлению) —————————————————————————
+  var YT_MODE_KEYLESS = 'Без ключа (через Hub)';
+  var YT_MODE_API = 'API-ключ (официально)';
+  var CONN_DEFAULTS = {
+    twitchChannel: '',
+    youtubeChannel: '',
+    youtubeMode: YT_MODE_KEYLESS,
+    youtubeApiKey: '',
+    youtubeVideoIdOverride: '',
+    thirdPartyEmotes: true
+  };
+
+  function cleanStr(v, max) {
+    return String(v === undefined || v === null ? '' : v).replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, max);
+  }
+  function readBool(v, d) {
+    if (v === undefined || v === null || v === '') return d;
+    return v === true || v === 1 || v === '1' || v === 'true';
+  }
+  // Любой «сырой» объект (query-параметры, config.js, сообщение от Hub) → проверенные настройки подключения.
+  function connFrom(raw) {
+    raw = raw && typeof raw === 'object' ? raw : {};
+    var mode = raw.youtubeMode === YT_MODE_API ? YT_MODE_API : YT_MODE_KEYLESS;
+    return {
+      twitchChannel: cleanStr(raw.twitchChannel, 120),
+      youtubeChannel: cleanStr(raw.youtubeChannel, 200),
+      youtubeMode: mode,
+      youtubeApiKey: cleanStr(raw.youtubeApiKey, 100).replace(/[^A-Za-z0-9_\-]/g, ''),
+      youtubeVideoIdOverride: cleanStr(raw.youtubeVideoIdOverride, 200),
+      thirdPartyEmotes: readBool(raw.thirdPartyEmotes, CONN_DEFAULTS.thirdPartyEmotes)
+    };
+  }
+
+  // Логин Twitch: допускаем и ссылку, и «#имя», и «@имя». Пусто — если непохоже на логин.
+  function normTwitch(input) {
+    var s = String(input || '').trim().toLowerCase();
+    var m = /twitch\.tv\/([a-z0-9_]+)/.exec(s);
+    if (m) s = m[1];
+    s = s.replace(/^[#@]/, '');
+    return /^[a-z0-9_]{1,25}$/.test(s) ? s : '';
+  }
+  // Video ID YouTube: из ссылки (watch?v=, youtu.be/, /live/) или как есть.
+  function normVideoId(input) {
+    var s = String(input || '').trim();
+    if (!s) return '';
+    var m = /(?:[?&]v=|youtu\.be\/|\/live\/|\/embed\/)([A-Za-z0-9_-]{11})/.exec(s);
+    if (m) return m[1];
+    return /^[A-Za-z0-9_-]{11}$/.test(s) ? s : s.slice(0, 64);
+  }
+
+  // ——— Twitch: разбор строки IRC (порт chat/twitch.rs) ———————————————————————————————
+  function unescapeTag(v) {
+    var out = '', i = 0;
+    while (i < v.length) {
+      var c = v[i++];
+      if (c === '\\') {
+        if (i >= v.length) break;
+        var n = v[i++];
+        out += n === 's' ? ' ' : n === ':' ? ';' : n === 'r' ? '\r' : n === 'n' ? '\n' : n;
+      } else out += c;
+    }
+    return out;
+  }
+  function parseTags(raw) {
+    var out = {};
+    String(raw).split(';').forEach(function (kv) {
+      var i = kv.indexOf('=');
+      if (i < 0) return;
+      out[kv.slice(0, i)] = unescapeTag(kv.slice(i + 1));
+    });
+    return out;
+  }
+
+  var BADGE_INFO = {
+    broadcaster: ['broadcaster', 'Стример'],
+    moderator: ['moderator', 'Модератор'],
+    lead_moderator: ['lead_moderator', 'Ведущий модератор'],
+    vip: ['vip', 'VIP'],
+    subscriber: ['subscriber', 'Подписчик'],
+    founder: ['subscriber', 'Фаундер'],
+    partner: ['partner', 'Партнёр'],
+    staff: ['staff', 'Staff'],
+    admin: ['staff', 'Admin']
+  };
+  function parseBadges(raw) {
+    var out = [];
+    String(raw || '').split(',').forEach(function (entry) {
+      var info = BADGE_INFO[entry.split('/')[0]];
+      if (!info) return;
+      if (out.some(function (b) { return b.label === info[1]; })) return;
+      out.push({ role: info[0], label: info[1] });
+    });
+    return out;
+  }
+  // Цвет ника допускаем только вида #RRGGBB — он попадает в стиль элемента.
+  function validColor(c) { return /^#[0-9a-fA-F]{6}$/.test(c || ''); }
+
+  function stripAction(text) {
+    if (text.indexOf('\u0001ACTION ') === 0) return text.slice(8).replace(/\u0001+$/, '');
+    return text;
+  }
+
+  // Слова из «third» (7TV / BetterTTV) заменяются картинками, только целые слова.
+  function pushText(parts, segment, third) {
+    var buf = '';
+    segment.split(' ').forEach(function (word, i) {
+      if (i > 0) buf += ' ';
+      var url = word && third ? third.get(word) : undefined;
+      if (url) {
+        if (buf) { parts.push({ text: buf }); buf = ''; }
+        parts.push({ text: word, image: url });
+      } else buf += word;
+    });
+    if (buf) parts.push({ text: buf });
+  }
+  // Позиции эмоутов Twitch считаются в СИМВОЛАХ (code points), а не в единицах UTF-16 и не в байтах.
+  function renderParts(text, emotesTag, third) {
+    var chars = Array.from(text), ranges = [];
+    String(emotesTag || '').split('/').forEach(function (entry) {
+      var i = entry.indexOf(':');
+      if (i < 0) return;
+      var id = entry.slice(0, i), list = entry.slice(i + 1);
+      if (!id || !/^[A-Za-z0-9_]+$/.test(id)) return;
+      list.split(',').forEach(function (pos) {
+        var m = /^(\d+)-(\d+)$/.exec(pos);
+        if (m) ranges.push([+m[1], +m[2], id]);
+      });
+    });
+    ranges.sort(function (a, b) { return a[0] - b[0]; });
+    var parts = [], cursor = 0;
+    ranges.forEach(function (r) {
+      var s = r[0], e = r[1];
+      if (s < cursor || e < s || e >= chars.length) return;
+      pushText(parts, chars.slice(cursor, s).join(''), third);
+      parts.push({ text: chars.slice(s, e + 1).join(''), image: 'https://static-cdn.jtvnw.net/emoticons/v2/' + r[2] + '/default/dark/2.0' });
+      cursor = e + 1;
+    });
+    if (cursor < chars.length) pushText(parts, chars.slice(cursor).join(''), third);
+    return parts;
+  }
+
+  function tagTs(tags, now) {
+    var n = parseInt(tags['tmi-sent-ts'], 10);
+    return isFinite(n) ? n : now();
+  }
+  function systemMsg(id, text, ts) {
+    return { id: id, platform: 'twitch', kind: 'system', author: '', color: null, badges: [], parts: [{ text: text }], ts: ts, amount: null };
+  }
+  function privmsg(prefix, params, tags, third, now) {
+    var i = params.indexOf(' :');
+    if (i < 0) return { t: 'ignore' };
+    var text = stripAction(params.slice(i + 2));
+    var nick = prefix.replace(/^:/, '').split('!')[0] || '';
+    var author = tags['display-name'] || nick;
+    if (!author) return { t: 'ignore' };
+    var ts = tagTs(tags, now);
+    return { t: 'chat', msg: {
+      id: tags.id || (nick + '-' + ts + '-' + Array.from(text).length),
+      platform: 'twitch', kind: 'message', author: author,
+      color: validColor(tags.color) ? tags.color : null,
+      badges: parseBadges(tags.badges),
+      parts: renderParts(text, tags.emotes, third),
+      ts: ts, amount: null
+    } };
+  }
+  function clearchat(params, tags, now) {
+    var i = params.indexOf(' :');
+    var target = i >= 0 ? params.slice(i + 2).trim() : '';
+    var text = !target ? 'чат полностью очищен модератором'
+      : tags['ban-duration'] !== undefined ? target + ' получил(а) таймаут (' + tags['ban-duration'] + ' сек)'
+      : target + ' забанен(а)';
+    var ts = tagTs(tags, now);
+    return { t: 'chat', msg: systemMsg('clearchat-' + ts + '-' + target, text, ts) };
+  }
+  function clearmsg(tags, now) {
+    var login = tags.login || 'пользователь', ts = tagTs(tags, now);
+    var id = tags['target-msg-id'] ? 'clearmsg-' + tags['target-msg-id'] : 'clearmsg-' + login + '-' + ts;
+    return { t: 'chat', msg: systemMsg(id, 'сообщение от ' + login + ' удалено модератором', ts) };
+  }
+  function splitn3(s) {
+    var a = s.indexOf(' ');
+    if (a < 0) return [s, '', ''];
+    var b = s.indexOf(' ', a + 1);
+    if (b < 0) return [s.slice(0, a), s.slice(a + 1), ''];
+    return [s.slice(0, a), s.slice(a + 1, b), s.slice(b + 1)];
+  }
+  // Одна строка IRC → { t:'ping'|'joined'|'reconnect'|'notice'|'chat'|'ignore', … }
+  function parseLine(line, third, nowFn) {
+    var now = nowFn || Date.now;
+    line = String(line).replace(/[\r\n]+$/, '');
+    if (line.indexOf('PING') === 0) {
+      var payload = line.slice(4).trim();
+      return { t: 'ping', payload: payload || ':tmi.twitch.tv' };
+    }
+    var tags = {}, rest = line;
+    if (line[0] === '@') {
+      var sp = line.indexOf(' ');
+      if (sp < 0) return { t: 'ignore' };
+      tags = parseTags(line.slice(1, sp));
+      rest = line.slice(sp + 1);
+    }
+    var p = splitn3(rest), prefix = p[0], command = p[1], params = p[2];
+    switch (command) {
+      case '366': case 'JOIN': return { t: 'joined' };
+      case 'RECONNECT': return { t: 'reconnect' };
+      case 'NOTICE': { var i = params.indexOf(' :'); return { t: 'notice', text: i >= 0 ? params.slice(i + 2) : '' }; }
+      case 'PRIVMSG': return privmsg(prefix, params, tags, third, now);
+      case 'CLEARCHAT': return clearchat(params, tags, now);
+      case 'CLEARMSG': return clearmsg(tags, now);
+      default: return { t: 'ignore' };
+    }
+  }
+
+  // ——— Сторонние эмоуты (порт chat/emotes.rs): только глобальные наборы 7TV и BetterTTV —————————
+  function goodName(n) { var l = Array.from(n).length; return l >= 2 && l <= 30 && !/\s/.test(n); }
+  function Emotes() { this.map = {}; this.enabled = true; }
+  Emotes.prototype.get = function (w) {
+    return this.enabled && Object.prototype.hasOwnProperty.call(this.map, w) ? this.map[w] : undefined;
+  };
+  Emotes.prototype.setAll = function (all) { this.map = all || {}; };
+
+  function parse7tv(v) {
+    var out = {};
+    ((v && v.emotes) || []).forEach(function (e) {
+      if (!e || typeof e.name !== 'string' || !goodName(e.name)) return;
+      var host = e.data && e.data.host;
+      if (!host || typeof host.url !== 'string' || !Array.isArray(host.files) || !host.files.length) return;
+      var nm = function (f) { return f && typeof f.name === 'string' ? f.name : ''; };
+      var pick = host.files.filter(function (f) { return /^2x/.test(nm(f)) && /\.webp$/.test(nm(f)); })[0] ||
+        host.files.filter(function (f) { return /^2x/.test(nm(f)); })[0] || host.files[host.files.length - 1];
+      var file = nm(pick);
+      if (!file) return;
+      var url = 'https:' + host.url + '/' + file;
+      if (/^https:\/\//.test(url)) out[e.name] = url;
+    });
+    return out;
+  }
+  function parseBttv(v) {
+    var out = {};
+    if (Array.isArray(v)) v.forEach(function (e) {
+      if (e && typeof e.code === 'string' && typeof e.id === 'string' && goodName(e.code) && /^[A-Za-z0-9]+$/.test(e.id)) {
+        out[e.code] = 'https://cdn.betterttv.net/emote/' + e.id + '/2x';
+      }
+    });
+    return out;
+  }
+  function fetchJson(env, url, ms) {
+    return env.fetchTimeout(url, ms).then(function (res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    });
+  }
+  // Что не загрузилось, того просто нет — чат от этого не ломается.
+  function loadGlobalEmotes(env) {
+    var all = {};
+    return fetchJson(env, 'https://7tv.io/v3/emote-sets/global', 5000).then(
+      function (v) { Object.assign(all, parse7tv(v)); }, function () { /* 7TV недоступен */ }
+    ).then(function () {
+      return fetchJson(env, 'https://api.betterttv.net/3/cached/emotes/global', 5000).then(function (v) {
+        var b = parseBttv(v);
+        Object.keys(b).forEach(function (k) { if (!(k in all)) all[k] = b[k]; });
+      }, function () { /* BetterTTV недоступен */ });
+    }).then(function () { return all; });
+  }
+
+  // ——— YouTube → ChatMessage ——————————————————————————————————————————————————————————
+  var YT_ROLE = {
+    owner: ['broadcaster', 'Владелец канала'],
+    moderator: ['moderator', 'Модератор'],
+    member: ['subscriber', 'Спонсор канала'],
+    verified: ['partner', 'Подтверждён']
+  };
+  // Ответ Hub (/api/yt/poll или команда yt_chat_poll): { author, runs:[{text,emoji?}], badges:['owner'…], ts, superchat? }
+  function fromYtPoll(m) {
+    if (!m || typeof m !== 'object') return null;
+    var parts = [];
+    (Array.isArray(m.runs) ? m.runs : []).forEach(function (r) {
+      if (!r || typeof r !== 'object') return;
+      var text = typeof r.text === 'string' ? r.text : '';
+      if (typeof r.emoji === 'string' && /^https:\/\//i.test(r.emoji)) parts.push({ text: text, image: r.emoji });
+      else if (text) parts.push({ text: text });
+    });
+    var paid = typeof m.superchat === 'string' && m.superchat ? m.superchat : null;
+    if (!parts.length && !paid) return null;
+    var badges = [];
+    (Array.isArray(m.badges) ? m.badges : []).forEach(function (b) {
+      var info = YT_ROLE[b];
+      if (info) badges.push({ role: info[0], label: info[1] });
+    });
+    return {
+      id: String(m.id || (m.author + '-' + m.ts)), platform: 'youtube', kind: paid ? 'superchat' : 'message',
+      author: String(m.author || 'YouTube'), color: null, badges: badges, parts: parts,
+      ts: typeof m.ts === 'number' && isFinite(m.ts) ? m.ts : Date.now(), amount: paid
+    };
+  }
+  // Ответ официального API (liveChat/messages): item → ChatMessage.
+  function fromYtApi(item) {
+    var sn = (item && item.snippet) || {}, au = (item && item.authorDetails) || {};
+    var text = typeof sn.displayMessage === 'string' ? sn.displayMessage : '';
+    var paid = sn.superChatDetails && sn.superChatDetails.amountDisplayString ? String(sn.superChatDetails.amountDisplayString) : null;
+    var member = sn.type === 'newSponsorEvent' || sn.type === 'memberMilestoneChatEvent';
+    if (!text && !paid) return null;
+    var badges = [];
+    if (au.isChatOwner) badges.push({ role: 'broadcaster', label: 'Владелец канала' });
+    if (au.isChatModerator) badges.push({ role: 'moderator', label: 'Модератор' });
+    if (au.isChatSponsor) badges.push({ role: 'subscriber', label: 'Спонсор канала' });
+    if (au.isVerified) badges.push({ role: 'partner', label: 'Подтверждён' });
+    var ts = sn.publishedAt ? Date.parse(sn.publishedAt) : NaN;
+    return {
+      id: String(item.id || (au.displayName + '-' + sn.publishedAt)), platform: 'youtube',
+      kind: paid ? 'superchat' : member ? 'member' : 'message',
+      author: String(au.displayName || 'YouTube'), color: null, badges: badges,
+      parts: text ? [{ text: text }] : [], ts: isFinite(ts) ? ts : Date.now(), amount: paid
+    };
+  }
+
+  // ——— Лента: защита от повторов и нумерация (как ChatHub в chat/mod.rs) ———————————————————
+  function createFeed() {
+    var seq = 0, seen = Object.create(null), order = [];
+    return {
+      // Возвращает готовое сообщение с номером или null, если такое уже было.
+      add: function (raw) {
+        if (!raw || !Array.isArray(raw.parts)) return null;
+        var key = raw.platform + ':' + raw.id;
+        if (seen[key]) return null;
+        seen[key] = true; order.push(key);
+        if (order.length > SEEN_MAX) delete seen[order.shift()];
+        raw.seq = ++seq;
+        return raw;
+      },
+      reset: function () { seen = Object.create(null); order = []; }
+    };
+  }
+
+  // ——— Подключения ————————————————————————————————————————————————————————————————————
+  // env: { WebSocket, fetchTimeout(url, ms), tauriInvoke(), location, now() } — по умолчанию из окна.
+  function defaultEnv() {
+    var w = root;
+    function tauriInvoke() {
+      var t = w.__TAURI__;
+      if (t && t.tauri && t.tauri.invoke) return t.tauri.invoke.bind(t.tauri);
+      if (t && t.core && t.core.invoke) return t.core.invoke.bind(t.core);
+      if (w.__TAURI_INTERNALS__ && w.__TAURI_INTERNALS__.invoke) return w.__TAURI_INTERNALS__.invoke.bind(w.__TAURI_INTERNALS__);
+      return null;
+    }
+    return {
+      WebSocket: w.WebSocket,
+      fetchTimeout: function (url, ms) {
+        var ctrl = new AbortController(), t = setTimeout(function () { ctrl.abort(); }, ms);
+        return w.fetch(url, { signal: ctrl.signal }).then(function (r) { clearTimeout(t); return r; }, function (e) { clearTimeout(t); throw e; });
+      },
+      tauriInvoke: tauriInvoke,
+      location: w.location,
+      now: Date.now
+    };
+  }
+
+  function keylessTransport(env) {
+    var loc = env.location;
+    if (loc && loc.protocol === 'http:' && /^(127\.0\.0\.1|localhost)$/.test(loc.hostname)) {
+      return { name: 'local', poll: function (q) {
+        var url = loc.origin + '/api/yt/poll?channel=' + encodeURIComponent(q.channel) + '&video=' + encodeURIComponent(q.video) + '&since=' + q.since;
+        return env.fetchTimeout(url, 8000).then(function (res) {
+          if (!res.ok) throw new Error('локальный сервер Hub ответил ' + res.status);
+          return res.json();
+        });
+      } };
+    }
+    var inv = env.tauriInvoke && env.tauriInvoke();
+    if (inv) return { name: 'tauri', poll: function (q) { return inv('yt_chat_poll', { channel: q.channel, videoId: q.video, since: q.since }); } };
+    return null;
+  }
+
+  function createConnections(envIn, hooks) {
+    var env = Object.assign(defaultEnv(), envIn || {});
+    var third = new Emotes();
+    var feed = createFeed();
+    var timers = new Set();
+    var cur = { twitch: null, youtube: null };   // что сейчас подключено: { key, stop }
+    var emotesLoading = false, emotesLoaded = false, dead = false;
+
+    function later(fn, ms) {
+      var id = setTimeout(function () { timers.delete(id); fn(); }, ms);
+      timers.add(id);
+      return id;
+    }
+    function status(platform, state, text) { if (hooks.onStatus) hooks.onStatus(platform, state, text || ''); }
+    function deliver(raw) {
+      var m = feed.add(raw);
+      if (m && !dead) hooks.onMessage(m);
+    }
+
+    function loadEmotes() {
+      if (emotesLoading || emotesLoaded) return;
+      emotesLoading = true;
+      loadGlobalEmotes(env).then(function (all) { third.setAll(all); emotesLoaded = true; }, function () { /* без сторонних эмоутов */ })
+        .then(function () { emotesLoading = false; });
+    }
+
+    // ——— Twitch ———
+    function startTwitch(channel) {
+      var stopped = false, ws = null, delay = 1000, lastData = 0, watchdog = 0;
+      function connect() {
+        if (stopped || dead) return;
+        status('twitch', 'connecting', 'подключение к #' + channel + '…');
+        try { ws = new env.WebSocket(TWITCH_WS); } catch (e) {
+          status('twitch', 'error', 'не удалось открыть соединение с Twitch');
+          later(connect, delay = Math.min(delay * 2, 30000));
+          return;
+        }
+        var mine = ws;
+        mine.onopen = function () {
+          lastData = env.now();
+          mine.send('CAP REQ :twitch.tv/tags twitch.tv/commands');
+          mine.send('PASS SCHMOOPIIE');
+          mine.send('NICK justinfan' + Math.floor(10000 + Math.random() * 80000));
+          mine.send('JOIN #' + channel);
+        };
+        mine.onmessage = function (ev) {
+          lastData = env.now();
+          String(ev.data).split('\r\n').forEach(function (line) {
+            if (!line) return;
+            var r = parseLine(line, third, env.now);
+            if (r.t === 'ping') mine.send('PONG ' + r.payload);
+            else if (r.t === 'joined') { delay = 1000; status('twitch', 'connected', '#' + channel); }
+            else if (r.t === 'notice') status('twitch', 'error', r.text || 'сообщение от Twitch');
+            else if (r.t === 'reconnect') { try { mine.close(); } catch (e) { /* уже закрыт */ } }
+            else if (r.t === 'chat') deliver(r.msg);
+          });
+        };
+        mine.onclose = function () {
+          if (stopped || ws !== mine) return;
+          status('twitch', 'connecting', 'переподключение…');
+          later(connect, delay);
+          delay = Math.min(delay * 2, 30000);
+        };
+        mine.onerror = function () {
+          status('twitch', 'error', 'нет связи с чатом Twitch (проверьте интернет и файрвол)');
+          try { mine.close(); } catch (e) { /* уже закрыт */ }
+        };
+      }
+      watchdog = setInterval(function () {
+        if (ws && lastData && env.now() - lastData > STALE_MS) { lastData = env.now(); try { ws.close(); } catch (e) { /* уже закрыт */ } }
+      }, 60000);
+      connect();
+      return function stop() {
+        stopped = true; clearInterval(watchdog);
+        var w = ws; ws = null;
+        if (w) { w.onclose = w.onerror = w.onmessage = null; try { w.close(); } catch (e) { /* уже закрыт */ } }
+        status('twitch', 'idle', '');
+      };
+    }
+
+    // ——— YouTube без ключа (через Hub) ———
+    function runKeyless(c, transport, ref, giveUp) {
+      var since = 0, fails = 0;
+      function tick() {
+        if (ref.stopped) return;
+        var wait = 1500;
+        Promise.resolve().then(function () {
+          return transport.poll({ channel: c.youtubeChannel, video: normVideoId(c.youtubeVideoIdOverride), since: since });
+        }).then(function (r) {
+          if (ref.stopped) return;
+          r = r || {};
+          fails = 0;
+          if (typeof r.next === 'number') since = r.next;
+          if (r.state === 'connected') status('youtube', 'connected', r.message || '');
+          else if (r.state === 'error') { status('youtube', 'error', r.message || 'ошибка чтения чата'); wait = 5000; }
+          else if (r.state === 'offline') { status('youtube', 'idle', r.message || 'эфира сейчас нет, жду…'); wait = 4000; }
+          else { status('youtube', 'connecting', r.message || 'ищу трансляцию…'); wait = 2500; }
+          (Array.isArray(r.messages) ? r.messages : []).forEach(function (m) { deliver(fromYtPoll(m)); });
+        }, function (err) {
+          if (ref.stopped) return;
+          fails++;
+          status('youtube', 'error', 'нет связи с Hub: ' + (err && err.message ? err.message : err));
+          wait = 5000;
+          if (fails >= 5 && c.youtubeApiKey) { giveUp(); wait = -1; }
+        }).then(function () { if (!ref.stopped && wait >= 0) later(tick, wait); });
+      }
+      tick();
+    }
+
+    // ——— YouTube по официальному API-ключу ———
+    function apiJson(url) {
+      return env.fetchTimeout(url, 10000).then(function (res) { return res.json().then(function (d) { return { status: res.status, data: d }; }); });
+    }
+    function runApi(c, ref) {
+      var inv = env.tauriInvoke && env.tauriInvoke();
+      var chanCache = null;
+      function resolveChannelId() {
+        if (chanCache) return Promise.resolve(chanCache);
+        var h = c.youtubeChannel.trim(), m = /youtube\.com\/([^/?#]+)/.exec(h);
+        if (m) h = m[1];
+        var q = /^UC[\w-]{20,}$/.test(h) ? 'id=' + encodeURIComponent(h) : 'forHandle=' + encodeURIComponent(h[0] === '@' ? h : '@' + h);
+        return apiJson('https://www.googleapis.com/youtube/v3/channels?part=id&' + q + '&key=' + encodeURIComponent(c.youtubeApiKey)).then(function (r) {
+          if (r.data.error) throw new Error(r.data.error.message || 'ошибка YouTube API');
+          chanCache = r.data.items && r.data.items[0] && r.data.items[0].id || null;
+          return chanCache;
+        });
+      }
+      function findVideo() {
+        var ov = normVideoId(c.youtubeVideoIdOverride);
+        if (ov) return Promise.resolve(ov);
+        if (inv) return Promise.resolve(inv('resolve_youtube_live_video', { channel: c.youtubeChannel })).catch(function () { return null; });
+        return resolveChannelId().then(function (id) {
+          if (!id) return null;
+          return apiJson('https://www.googleapis.com/youtube/v3/search?part=id&channelId=' + encodeURIComponent(id) + '&eventType=live&type=video&key=' + encodeURIComponent(c.youtubeApiKey))
+            .then(function (r) { return r.data.error ? null : (r.data.items && r.data.items[0] && r.data.items[0].id && r.data.items[0].id.videoId) || null; });
+        });
+      }
+      var retryIdle = inv ? 20000 : 5 * 60 * 1000;   // через Hub поиск бесплатный, через API — берегём квоту
+      function loop() {
+        if (ref.stopped) return;
+        status('youtube', 'connecting', 'ищу трансляцию…');
+        findVideo().then(function (video) {
+          if (ref.stopped) return;
+          if (!video) { status('youtube', 'idle', 'эфира сейчас нет, жду…'); later(loop, retryIdle); return; }
+          return apiJson('https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id=' + encodeURIComponent(video) + '&key=' + encodeURIComponent(c.youtubeApiKey)).then(function (r) {
+            if (ref.stopped) return;
+            if (r.data.error) throw new Error(r.data.error.message || 'ошибка YouTube API');
+            var it = r.data.items && r.data.items[0];
+            var chatId = it && it.liveStreamingDetails && it.liveStreamingDetails.activeLiveChatId;
+            if (!chatId) { status('youtube', 'idle', 'у трансляции нет активного чата'); later(loop, retryIdle); return; }
+            status('youtube', 'connected', 'API-ключ');
+            poll(chatId, undefined);
+          });
+        }).catch(function (e) {
+          if (ref.stopped) return;
+          status('youtube', 'error', (e && e.message) || 'ошибка YouTube');
+          later(loop, 20000);
+        });
+      }
+      function poll(chatId, token) {
+        if (ref.stopped) return;
+        var url = 'https://www.googleapis.com/youtube/v3/liveChat/messages?liveChatId=' + encodeURIComponent(chatId) +
+          '&part=snippet,authorDetails&key=' + encodeURIComponent(c.youtubeApiKey) + (token ? '&pageToken=' + encodeURIComponent(token) : '');
+        var wait = 5000;
+        apiJson(url).then(function (r) {
+          if (ref.stopped) return;
+          var d = r.data;
+          if (d.error) {
+            var reason = d.error.errors && d.error.errors[0] && d.error.errors[0].reason || '';
+            if (reason === 'liveChatEnded' || r.status === 403 || r.status === 404) { later(loop, 3000); wait = -1; return; }
+            status('youtube', 'error', d.error.message || 'ошибка YouTube API');
+            wait = 30000;   // скорее всего квота: чаще раза в 30 с не стучимся
+            return;
+          }
+          (d.items || []).forEach(function (it) { deliver(fromYtApi(it)); });
+          token = d.nextPageToken || token;
+          wait = Math.max(2000, d.pollingIntervalMillis || 5000);
+        }, function () { wait = 15000; }).then(function () { if (!ref.stopped && wait >= 0) later(function () { poll(chatId, token); }, wait); });
+      }
+      loop();
+    }
+
+    function startYoutube(c) {
+      var ref = { stopped: false };
+      var wantApi = c.youtubeMode === YT_MODE_API;
+      var transport = wantApi ? null : keylessTransport(env);
+      if (transport) runKeyless(c, transport, ref, function () { runApi(c, ref); });
+      else if (!c.youtubeApiKey) {
+        status('youtube', 'error', wantApi ? 'не указан API-ключ YouTube'
+          : 'без ключа чат YouTube читается только через Hub: откройте виджет по ссылке из Hub (http://127.0.0.1…) или впишите API-ключ');
+      } else runApi(c, ref);
+      return function stop() { ref.stopped = true; status('youtube', 'idle', ''); };
+    }
+
+    return {
+      third: third,
+      // Применить настройки. Перезапускается только то, что реально изменилось.
+      apply: function (rawConn) {
+        if (dead) return;
+        var c = connFrom(rawConn);
+        third.enabled = c.thirdPartyEmotes;
+        if (c.thirdPartyEmotes) loadEmotes();
+
+        var tw = normTwitch(c.twitchChannel);
+        var twKey = tw || (c.twitchChannel ? '!' + c.twitchChannel : '');
+        if ((cur.twitch ? cur.twitch.key : '') !== twKey) {
+          if (cur.twitch) cur.twitch.stop();
+          cur.twitch = null;
+          if (tw) cur.twitch = { key: twKey, stop: startTwitch(tw) };
+          else if (c.twitchChannel) { cur.twitch = { key: twKey, stop: function () {} }; status('twitch', 'error', 'это не похоже на логин Twitch'); }
+          else status('twitch', 'idle', '');
+        }
+        var ytOn = !!(c.youtubeChannel || normVideoId(c.youtubeVideoIdOverride));
+        var ytKey = ytOn ? JSON.stringify([c.youtubeChannel, c.youtubeMode, c.youtubeApiKey, normVideoId(c.youtubeVideoIdOverride)]) : '';
+        if ((cur.youtube ? cur.youtube.key : '') !== ytKey) {
+          if (cur.youtube) cur.youtube.stop();
+          cur.youtube = null;
+          if (ytOn) cur.youtube = { key: ytKey, stop: startYoutube(c) };
+          else status('youtube', 'idle', '');
+        }
+      },
+      // Есть ли хоть один источник (для подсказки «Укажите канал»).
+      hasSource: function () { return !!(cur.twitch || cur.youtube); },
+      stop: function () {
+        dead = true;
+        timers.forEach(clearTimeout); timers.clear();
+        if (cur.twitch) cur.twitch.stop();
+        if (cur.youtube) cur.youtube.stop();
+        cur.twitch = cur.youtube = null;
+      }
+    };
+  }
+
+  var api = {
+    CONN_DEFAULTS: CONN_DEFAULTS, YT_MODE_KEYLESS: YT_MODE_KEYLESS, YT_MODE_API: YT_MODE_API,
+    connFrom: connFrom, normTwitch: normTwitch, normVideoId: normVideoId,
+    unescapeTag: unescapeTag, parseTags: parseTags, parseBadges: parseBadges, renderParts: renderParts, parseLine: parseLine,
+    Emotes: Emotes, parse7tv: parse7tv, parseBttv: parseBttv, loadGlobalEmotes: loadGlobalEmotes,
+    fromYtPoll: fromYtPoll, fromYtApi: fromYtApi, createFeed: createFeed, keylessTransport: keylessTransport,
+    createConnections: createConnections
+  };
+  root.SAHub = api;
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
   <script>
   (function () {
     'use strict';
@@ -69,9 +1777,8 @@
       });
     }
 
-    var FILES = ['foxfirehub-bridge.js', 'wstyle.js', 'wchat.js', 'sachat-hub.js'];
-    FILES.reduce(function (p, f) { return p.then(function () { return loadScript(f); }); }, Promise.resolve())
-      .then(start, function (e) { hint('Не удалось загрузить файл виджета «' + e.message + '». Переустановите виджет в FoxFire Hub.'); });
+    // Все скрипты вшиты выше (tools/build.py): подгружать соседние файлы нельзя, во вложенных окнах Hub это не работает.
+    start();
 
     function start() {
       var SAW = window.SAW, CHAT = SAW.chat, DEF = SAW.get('chat'), HUB = window.SAHub, BR = window.FoxFireBridge;
